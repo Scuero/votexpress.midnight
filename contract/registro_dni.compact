@@ -39,8 +39,8 @@ export ledger total_registrados: Counter;
  */
 export circuit registrarDNI(datos: DatosDNI, hash_unico: Uint256): [] {
     // 1. Verificar que este DNI (vía hash) no haya sido registrado antes
-    assert(!dni_registrados.member(hash_unico)
-        "Este DNI ya fue registrado previamente en la red Midnight");
+    assert !dni_registrados.member(hash_unico)
+        "Este DNI ya fue registrado previamente en la red Midnight";
 
     // 2. Almacenar públicamente el hash indicando que ya está registrado
     //    Los datos del DNI permanecen privados (no hay disclose sobre 'datos')
