@@ -19,10 +19,11 @@ import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config
 import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import * as path from 'path';
 
-// @ts-ignore — Generado por `compact compile` en el Dockerfile
-import * as votacionContract from '../managed/votacion/contract';
-// @ts-ignore — Generado por `compact compile` en el Dockerfile
-import * as registroDniContract from '../managed/registro_dni/contract';
+// Los archivos en managed/ son generados automáticamente por `compact compile` en el Dockerfile.
+// En desarrollo local son stubs mínimos; se castean a `any` para evitar errores de tipo
+// con la interfaz CompiledContract (que solo existe en los archivos generados reales).
+const votacionContract: any = require('../managed/votacion/contract');
+const registroDniContract: any = require('../managed/registro_dni/contract');
 
 // ── Tipos ──────────────────────────────────────────────────────────────
 
