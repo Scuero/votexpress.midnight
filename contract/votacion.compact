@@ -22,28 +22,28 @@ export enum EstadoVotacion {
 // ── Ledger público (on-chain) ──────────────────────────────────────────
 
 // Conteo acumulado de votos por candidato (clave = nombre candidato)
-export ledger conteo_votos: Map<Opaque<"string">, Uint<254>>;
+export ledger conteo_votos: Map<Opaque<"string">, Uint<253>>;
 
 // Estado actual de la votación
 export ledger estado_actual: EstadoVotacion;
 
 // Registro de nullifiers usados (anti-doble voto)
-export ledger votos_emitidos: Map<Uint<254>, Boolean>;
+export ledger votos_emitidos: Map<Uint<253>, Boolean>;
 
 // Timestamp Unix (segundos) de inicio de la votación
-export ledger hora_inicio: Uint<254>;
+export ledger hora_inicio: Uint<253>;
 
 // Duración del evento en segundos (86400 = 24 horas)
-export ledger duracion_segundos: Uint<254>;
+export ledger duracion_segundos: Uint<253>;
 
 // Contador global de votos emitidos
-export ledger total_votos: Uint<254>;
+export ledger total_votos: Uint<253>;
 
 // Registro de candidatos válidos
 export ledger candidatos_registrados: Map<Opaque<"string">, Boolean>;
 
 // Cantidad de candidatos registrados
-export ledger cantidad_candidatos: Uint<254>;
+export ledger cantidad_candidatos: Uint<253>;
 
 // ── Circuitos de Administración ────────────────────────────────────────
 
@@ -64,7 +64,7 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
     // Registrar candidato e inicializar su conteo en 0
     candidatos_registrados.insert(nombre, true);
     conteo_votos.insert(nombre, 0);
-    cantidad_candidatos = (cantidad_candidatos + (1 as Field)) as Uint<254>;
+    cantidad_candidatos = (cantidad_candidatos + (1 as Field)) as Uint<253>;
 }
 
 /**
@@ -72,7 +72,7 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
  * @param timestamp_inicio Timestamp Unix (segundos) del momento de apertura
  * @param duracion Duración del evento en segundos (ej: 86400 para 24 horas)
  */
-export circuit iniciarVotacion(timestamp_inicio: Uint<254>, duracion: Uint<254>): [] {
+export circuit iniciarVotacion(timestamp_inicio: Uint<253>, duracion: Uint<253>): [] {
     // Solo se puede abrir si está cerrada
     assert estado_actual == EstadoVotacion.CERRADA
         "La votación ya fue iniciada o finalizada";
@@ -93,13 +93,13 @@ export circuit iniciarVotacion(timestamp_inicio: Uint<254>, duracion: Uint<254>)
  * Finaliza la votación una vez que el tiempo haya expirado.
  * @param timestamp_actual Timestamp Unix (segundos) del momento actual
  */
-export circuit finalizarVotacion(timestamp_actual: Uint<254>): [] {
+export circuit finalizarVotacion(timestamp_actual: Uint<253>): [] {
     // Solo se puede finalizar si está abierta
     assert estado_actual == EstadoVotacion.ABIERTA
         "La votación no está abierta";
 
     // Verificar que el tiempo haya expirado
-    assert disclose(timestamp_actual) >= (hora_inicio + (duracion_segundos as Field)) as Uint<254>
+    assert disclose(timestamp_actual) >= (hora_inicio + (duracion_segundos as Field)) as Uint<253>
         "El tiempo de votación no ha expirado aún";
 
     // Cambiar estado a finalizada
@@ -118,15 +118,15 @@ export circuit finalizarVotacion(timestamp_actual: Uint<254>): [] {
  */
 export circuit emitirVoto(
     candidato: Opaque<"string">,
-    nullifier: Uint<254>,
-    timestamp_actual: Uint<254>
+    nullifier: Uint<253>,
+    timestamp_actual: Uint<253>
 ): [] {
     // 1. La votación debe estar abierta
     assert estado_actual == EstadoVotacion.ABIERTA
         "La votación no está abierta";
 
     // 2. Verificar que el tiempo no haya expirado
-    assert disclose(timestamp_actual) < (hora_inicio + (duracion_segundos as Field)) as Uint<254>
+    assert disclose(timestamp_actual) < (hora_inicio + (duracion_segundos as Field)) as Uint<253>
         "El tiempo de votación ha expirado";
 
     // 3. Verificar que el candidato esté registrado
@@ -144,8 +144,8 @@ export circuit emitirVoto(
     const votos_actuales = conteo_votos.member(candidato)
         ? conteo_votos.lookup(candidato)
         : 0;
-    conteo_votos.insert(candidato, (votos_actuales + (1 as Field)) as Uint<254>);
+    conteo_votos.insert(candidato, (votos_actuales + (1 as Field)) as Uint<253>);
 
     // 7. Incrementar contador global
-    total_votos = (total_votos + (1 as Field)) as Uint<254>;
+    total_votos = (total_votos + (1 as Field)) as Uint<253>;
 }
