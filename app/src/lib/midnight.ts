@@ -1,14 +1,21 @@
 /**
- * MidnightService — Capa de abstracción para interactuar con la red Midnight.
+ * MidnightService — Capa de integración real con la red Midnight.
  *
- * Soporta dos modos:
- * 1. Simulación: funciona sin SDK ni red real (para desarrollo y demo)
- * 2. Real: se conecta al SDK @midnight-ntwrk/* y la red Midnight (testnet/mainnet)
- *
- * El modo se determina automáticamente según la configuración de entorno.
+ * Conecta la aplicación con el SDK @midnight-ntwrk/* y la red Midnight (testnet/mainnet).
+ * Utiliza los contratos ZK reales compilados en app/src/managed.
  */
 
-import { getNetworkConfig, getDefaultVotingDuration } from './midnightProviders';
+import { getNetworkConfig, getCachedConfig, getDefaultVotingDuration } from './midnightProviders';
+import { connectLaceWallet } from './walletConnector';
+import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
+import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-private-state-provider';
+import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
+import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
+
+// @ts-ignore
+import * as votacionContract from '../managed/votacion/contract';
+// @ts-ignore
+import * as registroDniContract from '../managed/registro_dni/contract';
 
 // ── Tipos ──────────────────────────────────────────────────────────────
 
@@ -67,206 +74,129 @@ export interface IMidnightService {
   checkProofServerHealth(): Promise<{ status: boolean; message: string }>;
 }
 
-// ── Implementación Simulada ────────────────────────────────────────────
+// ── Implementación Blockchain Real ─────────────────────────────────────
 
-class SimulatedMidnightService implements IMidnightService {
-  private estado: EstadoVotacion = 'CERRADA';
-  private candidatos: Map<string, number> = new Map();
-  private nullifiers: Set<string> = new Set();
-  private dniRegistrados: Set<string> = new Set();
-  private horaInicio: number | null = null;
-  private duracionSegundos: number = getDefaultVotingDuration();
-  private totalVotos: number = 0;
+class RealMidnightService implements IMidnightService {
   private hourlySnapshots: HourlySnapshot[] = [];
-  private snapshotInterval: ReturnType<typeof setInterval> | null = null;
 
-  private generateTxId(): string {
-    return '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  private generateProofHash(): string {
-    return 'zkp_' + Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  // Sincronizar el estado actual con el servidor para soporte multidispositivo
-  private async pullState(): Promise<void> {
-    if (typeof window === 'undefined') return;
-    try {
-      const res = await fetch('/api/ledger');
-      if (res.ok) {
-        const data = await res.json();
-        this.estado = data.estado;
-        this.candidatos = new Map(data.candidatos);
-        this.nullifiers = new Set(data.nullifiers);
-        this.dniRegistrados = new Set(data.dniRegistrados);
-        this.horaInicio = data.horaInicio;
-        this.duracionSegundos = data.duracionSegundos;
-        this.totalVotos = data.totalVotos;
-        this.hourlySnapshots = data.hourlySnapshots;
-      }
-    } catch (err) {
-      console.warn('Error de lectura en ledger simulado:', err);
-    }
-  }
-
-  private async pushState(): Promise<void> {
-    if (typeof window === 'undefined') return;
-    try {
-      await fetch('/api/ledger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          estado: this.estado,
-          candidatos: Array.from(this.candidatos.entries()),
-          nullifiers: Array.from(this.nullifiers.values()),
-          dniRegistrados: Array.from(this.dniRegistrados.values()),
-          horaInicio: this.horaInicio,
-          duracionSegundos: this.duracionSegundos,
-          totalVotos: this.totalVotos,
-          hourlySnapshots: this.hourlySnapshots,
-        })
-      });
-    } catch (err) {
-      console.warn('Error al escribir en ledger simulado:', err);
-    }
-  }
-
-  private startSnapshotTimer(): void {
-    if (this.snapshotInterval) clearInterval(this.snapshotInterval);
-    this.takeSnapshot();
-    const intervalMs = 60_000; // 1 minuto en demo
-    this.snapshotInterval = setInterval(async () => {
-      await this.pullState();
-      if (this.estado === 'ABIERTA') {
-        this.takeSnapshot();
-        await this.pushState();
-      } else {
-        if (this.snapshotInterval) clearInterval(this.snapshotInterval);
-      }
-    }, intervalMs);
-  }
-
-  private takeSnapshot(): void {
-    this.hourlySnapshots.push({
-      hora: this.hourlySnapshots.length,
-      timestamp: Math.floor(Date.now() / 1000),
-      candidatos: Array.from(this.candidatos.entries()).map(([nombre, votos]) => ({ nombre, votos })),
-      totalVotos: this.totalVotos,
-    });
+  // Helper para inicializar providers del SDK conectados a la billetera y red
+  private async getProviders() {
+    const config = getNetworkConfig();
+    const walletAPI = await connectLaceWallet();
+    
+    return {
+      privateStateProvider: levelPrivateStateProvider({
+        dbPath: './midnight-private-state'
+      }),
+      publicDataProvider: indexerPublicDataProvider(
+        config.indexerUrl,
+        config.indexerWsUrl
+      ),
+      proofProvider: httpClientProofProvider(
+        config.proofServerUrl
+      ),
+      walletProvider: walletAPI
+    };
   }
 
   async registrarCandidato(nombre: string): Promise<TxResult> {
-    await this.simulateDelay(800);
-    await this.pullState();
-
-    if (this.estado !== 'CERRADA') {
-      throw new Error('No se pueden agregar candidatos con la votación activa o finalizada.');
-    }
-    if (this.candidatos.has(nombre)) {
-      throw new Error(`El candidato "${nombre}" ya está registrado.`);
-    }
     if (!nombre.trim()) {
       throw new Error('El nombre del candidato no puede estar vacío.');
     }
+    
+    const config = getCachedConfig();
+    if (!config.votingContractAddress) {
+      throw new Error('Contrato de votación no configurado en la DApp.');
+    }
 
-    this.candidatos.set(nombre, 0);
-    await this.pushState();
+    const providers = await this.getProviders();
+    const deployed = await findDeployedContract(providers, {
+      compiledContract: votacionContract.contractSpecification,
+      contractAddress: config.votingContractAddress,
+    });
 
+    const tx = await deployed.callTx.registrarCandidato(nombre);
+    
     return {
       success: true,
-      transactionId: this.generateTxId(),
-      proofHash: this.generateProofHash(),
-      details: `Candidato "${nombre}" registrado exitosamente en el ledger Midnight.`,
+      transactionId: tx.txHash,
+      proofHash: tx.proofHash || '',
+      details: `Candidato "${nombre}" registrado exitosamente en Midnight Testnet.`,
     };
   }
 
   async iniciarVotacion(duracionSegundos?: number): Promise<TxResult> {
-    await this.simulateDelay(1500);
-    await this.pullState();
-
-    if (this.estado !== 'CERRADA') {
-      throw new Error('La votación ya fue iniciada o finalizada.');
-    }
-    if (this.candidatos.size < 2) {
-      throw new Error(`Se necesitan al menos 2 candidatos. Actualmente hay ${this.candidatos.size}.`);
+    const config = getCachedConfig();
+    if (!config.votingContractAddress) {
+      throw new Error('Contrato de votación no configurado en la DApp.');
     }
 
-    this.duracionSegundos = duracionSegundos || getDefaultVotingDuration();
-    this.horaInicio = Math.floor(Date.now() / 1000);
-    this.estado = 'ABIERTA';
+    const providers = await this.getProviders();
+    const deployed = await findDeployedContract(providers, {
+      compiledContract: votacionContract.contractSpecification,
+      contractAddress: config.votingContractAddress,
+    });
+
+    const duration = BigInt(duracionSegundos || getDefaultVotingDuration());
+    const now = BigInt(Math.floor(Date.now() / 1000));
+
+    const tx = await deployed.callTx.iniciarVotacion(now, duration);
     this.hourlySnapshots = [];
-    this.startSnapshotTimer();
-    await this.pushState();
 
     return {
       success: true,
-      transactionId: this.generateTxId(),
-      proofHash: this.generateProofHash(),
-      details: `Votación iniciada. Duración: ${this.duracionSegundos} segundos (${(this.duracionSegundos / 3600).toFixed(1)} horas).`,
+      transactionId: tx.txHash,
+      proofHash: tx.proofHash || '',
+      details: 'Votación iniciada oficialmente en la blockchain de Midnight.',
     };
   }
 
   async finalizarVotacion(): Promise<TxResult> {
-    await this.simulateDelay(1000);
-    await this.pullState();
-
-    if (this.estado !== 'ABIERTA') {
-      throw new Error('La votación no está abierta.');
+    const config = getCachedConfig();
+    if (!config.votingContractAddress) {
+      throw new Error('Contrato de votación no configurado en la DApp.');
     }
 
-    const now = Math.floor(Date.now() / 1000);
-    if (this.horaInicio && (now - this.horaInicio) < this.duracionSegundos) {
-      const remaining = this.duracionSegundos - (now - this.horaInicio);
-      throw new Error(`El tiempo de votación no ha expirado. Faltan ${Math.ceil(remaining / 60)} minutos.`);
-    }
+    const providers = await this.getProviders();
+    const deployed = await findDeployedContract(providers, {
+      compiledContract: votacionContract.contractSpecification,
+      contractAddress: config.votingContractAddress,
+    });
 
-    this.estado = 'FINALIZADA';
-    this.takeSnapshot(); // Snapshot final
-    if (this.snapshotInterval) clearInterval(this.snapshotInterval);
-    await this.pushState();
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const tx = await deployed.callTx.finalizarVotacion(now);
 
     return {
       success: true,
-      transactionId: this.generateTxId(),
-      proofHash: this.generateProofHash(),
-      details: 'Votación finalizada. Recuento de votos completado.',
+      transactionId: tx.txHash,
+      proofHash: tx.proofHash || '',
+      details: 'Votación finalizada y recuento de votos cerrado en la blockchain.',
     };
   }
 
   async emitirVoto(candidato: string, nullifierHex: string): Promise<VoteSubmissionResult> {
-    await this.simulateDelay(2000);
-    await this.pullState();
-
-    if (this.estado !== 'ABIERTA') {
-      throw new Error('La votación no está abierta.');
+    const config = getCachedConfig();
+    if (!config.votingContractAddress) {
+      throw new Error('Contrato de votación no configurado en la DApp.');
     }
 
-    // Verificar tiempo
-    const now = Math.floor(Date.now() / 1000);
-    if (this.horaInicio && (now - this.horaInicio) >= this.duracionSegundos) {
-      throw new Error('El tiempo de votación ha expirado.');
-    }
+    const providers = await this.getProviders();
+    const deployed = await findDeployedContract(providers, {
+      compiledContract: votacionContract.contractSpecification,
+      contractAddress: config.votingContractAddress,
+    });
 
-    if (!this.candidatos.has(candidato)) {
-      throw new Error(`Candidato "${candidato}" no está registrado.`);
-    }
+    // Convertir el nullifier del DNI (hexadecimal) a BigInt compatible con Uint<254>
+    const nullifierBigInt = BigInt('0x' + nullifierHex.replace(/^0x/, ''));
+    const now = BigInt(Math.floor(Date.now() / 1000));
 
-    if (this.nullifiers.has(nullifierHex)) {
-      throw new Error('Este DNI ya ha emitido su voto en esta votación.');
-    }
-
-    this.nullifiers.add(nullifierHex);
-    this.candidatos.set(candidato, (this.candidatos.get(candidato) || 0) + 1);
-    this.totalVotos++;
-    await this.pushState();
+    const tx = await deployed.callTx.emitirVoto(candidato, nullifierBigInt, now);
 
     return {
       success: true,
-      transactionId: this.generateTxId(),
-      proofHash: this.generateProofHash(),
-      details: 'Voto emitido exitosamente con prueba ZK en la red Midnight.',
+      transactionId: tx.txHash,
+      proofHash: tx.proofHash || '',
+      details: 'Voto emitido exitosamente con prueba ZK en Midnight.',
       candidatoNombre: candidato,
       nullifierRegistered: nullifierHex,
       updatedLedger: await this.getLedgerState(),
@@ -274,51 +204,95 @@ class SimulatedMidnightService implements IMidnightService {
   }
 
   async registrarDni(hashUnico: string): Promise<TxResult> {
-    await this.simulateDelay(1000);
-    await this.pullState();
-
-    if (this.dniRegistrados.has(hashUnico)) {
-      throw new Error('Este DNI ya fue registrado previamente en la red Midnight.');
+    const config = getCachedConfig();
+    if (!config.dniContractAddress) {
+      throw new Error('Contrato de Registro DNI no configurado en la DApp.');
     }
 
-    this.dniRegistrados.add(hashUnico);
-    await this.pushState();
+    const providers = await this.getProviders();
+    const deployed = await findDeployedContract(providers, {
+      compiledContract: registroDniContract.contractSpecification,
+      contractAddress: config.dniContractAddress,
+    });
+
+    // Hash único del DNI en formato BigInt compatible con Uint<254>
+    const hashBigInt = BigInt('0x' + hashUnico.replace(/^0x/, ''));
+    
+    // Objeto privado (witness) que no se guarda en el ledger
+    const datosDni = {
+      numero_dni: hashBigInt,
+      apellido_nombres: 'CONFIDENTIAL',
+      sexo: 'M',
+      fecha_nacimiento: '01/01/1990',
+      numero_tramite: BigInt(0)
+    };
+
+    const tx = await deployed.callTx.registrarDNI(datosDni, hashBigInt);
 
     return {
       success: true,
-      transactionId: this.generateTxId(),
-      proofHash: this.generateProofHash(),
+      transactionId: tx.txHash,
+      proofHash: tx.proofHash || '',
       details: 'DNI registrado de forma privada en la red Midnight.',
     };
   }
 
   async getLedgerState(): Promise<LedgerState> {
-    await this.pullState();
-    const now = Math.floor(Date.now() / 1000);
-    let tiempoRestante = -1;
+    const config = getCachedConfig();
+    if (!config.votingContractAddress) {
+      return {
+        estado: 'CERRADA',
+        candidatos: [],
+        totalVotos: 0,
+        horaInicio: null,
+        duracionSegundos: getDefaultVotingDuration(),
+        tiempoRestante: -1,
+        cantidadCandidatos: 0,
+      };
+    }
 
-    if (this.estado === 'ABIERTA' && this.horaInicio) {
-      tiempoRestante = Math.max(0, this.duracionSegundos - (now - this.horaInicio));
-      // Auto-finalizar si el tiempo expiró
-      if (tiempoRestante <= 0) {
-        this.estado = 'FINALIZADA';
-        this.takeSnapshot();
-        if (this.snapshotInterval) clearInterval(this.snapshotInterval);
-        tiempoRestante = 0;
-        await this.pushState();
-      }
-    } else if (this.estado === 'FINALIZADA') {
+    const providers = await this.getProviders();
+    const deployed = await findDeployedContract(providers, {
+      compiledContract: votacionContract.contractSpecification,
+      contractAddress: config.votingContractAddress,
+    });
+
+    const ledger = deployed.state.ledger;
+
+    // Convertir estado del enum del contrato (0 = CERRADA, 1 = ABIERTA, 2 = FINALIZADA)
+    let estado: EstadoVotacion = 'CERRADA';
+    if (ledger.estado_actual === 1) estado = 'ABIERTA';
+    if (ledger.estado_actual === 2) estado = 'FINALIZADA';
+
+    const now = Math.floor(Date.now() / 1000);
+    const horaInicio = ledger.hora_inicio ? Number(ledger.hora_inicio) : null;
+    const duracionSegundos = Number(ledger.duracion_segundos);
+
+    let tiempoRestante = -1;
+    if (estado === 'ABIERTA' && horaInicio) {
+      tiempoRestante = Math.max(0, duracionSegundos - (now - horaInicio));
+    } else if (estado === 'FINALIZADA') {
       tiempoRestante = 0;
     }
 
+    const candidatos: CandidatoInfo[] = [];
+    if (ledger.conteo_votos) {
+      for (const [nombre, votos] of Object.entries(ledger.conteo_votos)) {
+        candidatos.push({
+          nombre: String(nombre),
+          votos: Number(votos),
+        });
+      }
+    }
+
     return {
-      estado: this.estado,
-      candidatos: Array.from(this.candidatos.entries()).map(([nombre, votos]) => ({ nombre, votos })),
-      totalVotos: this.totalVotos,
-      horaInicio: this.horaInicio,
-      duracionSegundos: this.duracionSegundos,
+      estado,
+      candidatos,
+      totalVotos: Number(ledger.total_votos),
+      horaInicio,
+      duracionSegundos,
       tiempoRestante,
-      cantidadCandidatos: this.candidatos.size,
+      cantidadCandidatos: Number(ledger.cantidad_candidatos),
     };
   }
 
@@ -327,9 +301,9 @@ class SimulatedMidnightService implements IMidnightService {
   }
 
   async checkProofServerHealth(): Promise<{ status: boolean; message: string }> {
-    const proofServerUrl = getNetworkConfig().proofServerUrl;
+    const config = getNetworkConfig();
     try {
-      const response = await fetch(`${proofServerUrl}/health`, {
+      const response = await fetch(`${config.proofServerUrl}/health`, {
         method: 'GET',
         signal: AbortSignal.timeout(3000),
       });
@@ -338,12 +312,8 @@ class SimulatedMidnightService implements IMidnightService {
       }
       return { status: false, message: `Proof Server respondió con HTTP ${response.status}` };
     } catch {
-      return { status: false, message: `Proof Server en ${proofServerUrl} offline — modo simulación activo` };
+      return { status: false, message: `No se pudo conectar al Proof Server en ${config.proofServerUrl}` };
     }
-  }
-
-  private simulateDelay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 
@@ -352,24 +322,17 @@ class SimulatedMidnightService implements IMidnightService {
 let serviceInstance: IMidnightService | null = null;
 
 /**
- * Obtiene la instancia del servicio Midnight.
- * Usa simulación por defecto; cambiará a real cuando el SDK esté configurado.
+ * Obtiene la instancia del servicio Midnight conectado a blockchain.
  */
 export function getMidnightService(): IMidnightService {
   if (!serviceInstance) {
-    // TODO: cuando el SDK esté instalado, verificar si la red real está configurada
-    // y usar RealMidnightService en su lugar.
-    // if (isRealNetworkConfigured() && hasSDKPackages()) {
-    //   serviceInstance = new RealMidnightService();
-    // } else {
-    serviceInstance = new SimulatedMidnightService();
-    // }
+    serviceInstance = new RealMidnightService();
   }
   return serviceInstance;
 }
 
 /**
- * Resetea la instancia del servicio (útil para testing o cambio de red).
+ * Resetea la instancia del servicio.
  */
 export function resetMidnightService(): void {
   serviceInstance = null;
