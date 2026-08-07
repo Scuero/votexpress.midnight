@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getMidnightService, LedgerState, TxResult } from '../lib/midnight';
 import { WalletAPI, WalletState } from '../lib/walletConnector';
+import { getCachedConfig } from '../lib/midnightProviders';
 import WalletConnect from './WalletConnect';
 
 interface AdminPanelProps {
@@ -18,8 +19,18 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txSuccess, setTxSuccess] = useState<TxResult | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const service = getMidnightService();
+
+  const handleShareLink = () => {
+    if (typeof window === 'undefined') return;
+    const config = getCachedConfig();
+    const shareUrl = `${window.location.origin}/?net=${config.network}&voting=${config.votingContractAddress}&dni=${config.dniContractAddress}&bf=${config.blockfrostProjectId}&proof=${config.proofServerUrl}`;
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  };
 
   const handleWalletConnected = (api: WalletAPI | null, state: WalletState | null) => {
     setAdminApi(api);
@@ -232,6 +243,23 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
             <h4 style={{ fontSize: 14, fontWeight: 700 }}>Votación Completada</h4>
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
               El evento de votación ha concluido. Los resultados finales están publicados en la blockchain de Midnight de forma permanente y verificable.
+            </p>
+          </div>
+        )}
+
+        {/* Compartir Votación link */}
+        {(ledgerState.estado === 'ABIERTA' || ledgerState.estado === 'FINALIZADA') && (
+          <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>
+            <button
+              onClick={handleShareLink}
+              className="btn-primary"
+              style={{ width: '100%', padding: '12px', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.3)', color: '#a78bfa', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
+              {copied ? '¡Enlace de Votante Copiado!' : 'Copiar Enlace para Compartir Votación'}
+            </button>
+            <p style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', marginTop: 8 }}>
+              Comparte este enlace para que otros dispositivos carguen automáticamente los mismos contratos y red de votación.
             </p>
           </div>
         )}

@@ -48,13 +48,17 @@ let cachedConfig = {
   proofServerUrl: process.env.NEXT_PUBLIC_PROOF_SERVER_URL || '',
 };
 
-/**
- * Guarda la configuración en LocalStorage para persistencia en el navegador del usuario.
- */
 export function saveConfigToLocalStorage(config: typeof cachedConfig) {
   if (typeof window === 'undefined') return;
   localStorage.setItem('votexpress_config', JSON.stringify(config));
   cachedConfig = { ...config };
+
+  // Sincronizar con el servidor para que otros dispositivos lo detecten
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config)
+  }).catch(err => console.warn('Error de sincronización con servidor:', err));
 }
 
 /**
@@ -70,7 +74,32 @@ export function getCachedConfig() {
 export async function fetchRuntimeConfig(): Promise<void> {
   if (typeof window === 'undefined') return; // Solo ejecutar en cliente
   
-  // 1. Intentar cargar de LocalStorage primero
+  // 1. Verificar si hay parámetros en la URL (ideal para compartir links entre dispositivos)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlNet = urlParams.get('net');
+  const urlVoting = urlParams.get('voting');
+  const urlDni = urlParams.get('dni');
+  const urlBf = urlParams.get('bf');
+  const urlProof = urlParams.get('proof');
+  
+  if (urlNet || urlVoting || urlDni) {
+    const newConfig = {
+      network: (urlNet || cachedConfig.network) as MidnightNetwork,
+      blockfrostProjectId: urlBf || cachedConfig.blockfrostProjectId,
+      votingContractAddress: urlVoting || cachedConfig.votingContractAddress,
+      dniContractAddress: urlDni || cachedConfig.dniContractAddress,
+      proofServerUrl: urlProof || cachedConfig.proofServerUrl,
+    };
+    saveConfigToLocalStorage(newConfig);
+    console.log('🔗 Configuración importada desde URL compartida:', newConfig);
+    
+    // Limpiar los parámetros de la URL para dejarla limpia
+    const cleanUrl = window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+    return;
+  }
+
+  // 2. Intentar cargar de LocalStorage primero
   const saved = localStorage.getItem('votexpress_config');
   if (saved) {
     try {
@@ -83,7 +112,7 @@ export async function fetchRuntimeConfig(): Promise<void> {
     }
   }
 
-  // 2. Fallback a la API de servidor (Cloud Run Env)
+  // 3. Fallback a la API de servidor (Cloud Run Env)
   try {
     const res = await fetch('/api/config');
     if (res.ok) {

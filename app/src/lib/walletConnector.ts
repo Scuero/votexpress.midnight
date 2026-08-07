@@ -94,6 +94,11 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
     if (error?.code === -1 || error?.message?.includes('rejected')) {
       throw new Error('Conexión rechazada por el usuario en Lace wallet.');
     }
+    if (error?.message?.includes('Network ID mismatch') || error?.message?.includes('network') || error?.message?.includes('mismatch')) {
+      const config = getCachedConfig();
+      const expectedNet = config.network === 'local' ? 'Local (Docker devnet)' : (config.network === 'testnet' ? 'Testnet Preprod' : 'Mainnet');
+      throw new Error(`Error de Red: Tu billetera Lace está configurada en una red distinta a la de esta DApp. Cambia la red dentro de los Ajustes de la extensión Lace para que coincida con: ${expectedNet}.`);
+    }
     throw new Error(`Error al conectar Lace: ${error?.message || 'Error desconocido'}`);
   }
 }
