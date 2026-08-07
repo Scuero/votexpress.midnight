@@ -12,11 +12,6 @@
  */
 
 import { getNetworkConfig, getCachedConfig, getDefaultVotingDuration } from './midnightProviders';
-import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
-import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-private-state-provider';
-import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
-import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
-import { findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import * as path from 'path';
 
 // Los archivos en managed/ son generados automáticamente por `compact compile` en el Dockerfile.
@@ -133,6 +128,11 @@ class RealMidnightServerService implements IMidnightService {
   private async getProviders() {
     const config = getNetworkConfig();
 
+    const { NodeZkConfigProvider } = await import('@midnight-ntwrk/midnight-js-node-zk-config-provider');
+    const { levelPrivateStateProvider } = await import('@midnight-ntwrk/midnight-js-level-private-state-provider');
+    const { indexerPublicDataProvider } = await import('@midnight-ntwrk/midnight-js-indexer-public-data-provider');
+    const { httpClientProofProvider } = await import('@midnight-ntwrk/midnight-js-http-client-proof-provider');
+
     // zkConfigProvider: carga las claves ZK (prover keys, verifier keys, ZKIR)
     // desde el directorio donde `compact compile` generó los artefactos.
     const zkArtifactsPath = path.resolve(process.cwd(), 'src/managed/votacion');
@@ -196,6 +196,7 @@ class RealMidnightServerService implements IMidnightService {
       throw new Error('Contrato de votación no configurado. Usá el panel de Ajustes (⚙️) para configurar las direcciones.');
     }
 
+    const { findDeployedContract } = await import('@midnight-ntwrk/midnight-js-contracts');
     const providers = await this.getProviders();
     const deployed = await findDeployedContract(providers, {
       contractAddress: config.votingContractAddress,
@@ -220,6 +221,7 @@ class RealMidnightServerService implements IMidnightService {
       throw new Error('Contrato de votación no configurado.');
     }
 
+    const { findDeployedContract } = await import('@midnight-ntwrk/midnight-js-contracts');
     const providers = await this.getProviders();
     const deployed = await findDeployedContract(providers, {
       contractAddress: config.votingContractAddress,
@@ -248,6 +250,7 @@ class RealMidnightServerService implements IMidnightService {
       throw new Error('Contrato de votación no configurado.');
     }
 
+    const { findDeployedContract } = await import('@midnight-ntwrk/midnight-js-contracts');
     const providers = await this.getProviders();
     const deployed = await findDeployedContract(providers, {
       contractAddress: config.votingContractAddress,
@@ -273,6 +276,7 @@ class RealMidnightServerService implements IMidnightService {
       throw new Error('Contrato de votación no configurado.');
     }
 
+    const { findDeployedContract } = await import('@midnight-ntwrk/midnight-js-contracts');
     const providers = await this.getProviders();
     const deployed = await findDeployedContract(providers, {
       contractAddress: config.votingContractAddress,
@@ -304,6 +308,7 @@ class RealMidnightServerService implements IMidnightService {
       throw new Error('Contrato de Registro DNI no configurado.');
     }
 
+    const { findDeployedContract } = await import('@midnight-ntwrk/midnight-js-contracts');
     const providers = await this.getProviders();
     const deployed = await findDeployedContract(providers, {
       contractAddress: config.dniContractAddress,
