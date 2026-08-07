@@ -8,7 +8,7 @@ import CompactStandardLibrary;
  * Características:
  * - Candidatos dinámicos (el admin los registra antes de abrir la votación)
  * - Timer de duración configurable (por defecto 24 horas = 86400 segundos)
- * - Anti-doble voto con Nullifiers ZK
+ * - Anti-doble voto con Nullifiers ZK (Bytes<32>, típicamente salida de persistentHash)
  * - Tres estados: CERRADA → ABIERTA → FINALIZADA
  * - Solo el admin puede gestionar el ciclo de vida
  */
@@ -22,28 +22,33 @@ export enum EstadoVotacion {
 // ── Ledger público (on-chain) ──────────────────────────────────────────
 
 // Conteo acumulado de votos por candidato (clave = nombre candidato)
-export ledger conteo_votos: Map<Opaque<"string">, Uint<253>>;
+// Uint<32> alcanza y sobra (4 mil millones de votos) y es mucho más barato
+// de probar en el circuito que Uint<253>.
+export ledger conteo_votos: Map<Opaque<"string">, Uint<32>>;
 
 // Estado actual de la votación
 export ledger estado_actual: EstadoVotacion;
 
-// Registro de nullifiers usados (anti-doble voto)
-export ledger votos_emitidos: Map<Uint<253>, Boolean>;
+// Registro de nullifiers usados (anti-doble voto).
+// Un nullifier es la salida de un hash (p. ej. persistentHash del DNI + sal),
+// así que su tipo natural es Bytes<32>, no un entero acotado.
+export ledger votos_emitidos: Map<Bytes<32>, Boolean>;
 
-// Timestamp Unix (segundos) de inicio de la votación
-export ledger hora_inicio: Uint<253>;
+// Timestamp Unix (segundos) de inicio de la votación.
+// Uint<64> es el tipo estándar para timestamps (igual que blockTimeLt/Gte de la stdlib).
+export ledger hora_inicio: Uint<64>;
 
 // Duración del evento en segundos (86400 = 24 horas)
-export ledger duracion_segundos: Uint<253>;
+export ledger duracion_segundos: Uint<64>;
 
 // Contador global de votos emitidos
-export ledger total_votos: Uint<253>;
+export ledger total_votos: Uint<32>;
 
 // Registro de candidatos válidos
 export ledger candidatos_registrados: Map<Opaque<"string">, Boolean>;
 
 // Cantidad de candidatos registrados
-export ledger cantidad_candidatos: Uint<253>;
+export ledger cantidad_candidatos: Uint<16>;
 
 // ── Circuitos de Administración ────────────────────────────────────────
 
@@ -64,7 +69,7 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
     // Registrar candidato e inicializar su conteo en 0
     candidatos_registrados.insert(nombre, true);
     conteo_votos.insert(nombre, 0);
-    cantidad_candidatos = (cantidad_candidatos + (1 as Field)) as Uint<253>;
+    cantidad_candidatos = (cantidad_candidatos + (1 as Uint<16>)) as Uint<16>;
 }
 
 /**
@@ -72,7 +77,7 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
  * @param timestamp_inicio Timestamp Unix (segundos) del momento de apertura
  * @param duracion Duración del evento en segundos (ej: 86400 para 24 horas)
  */
-export circuit iniciarVotacion(timestamp_inicio: Uint<253>, duracion: Uint<253>): [] {
+export circuit iniciarVotacion(timestamp_inicio: Uint<64>, duracion: Uint<64>): [] {
     // Solo se puede abrir si está cerrada
     assert estado_actual == EstadoVotacion.CERRADA
         "La votación ya fue iniciada o finalizada";
@@ -93,13 +98,13 @@ export circuit iniciarVotacion(timestamp_inicio: Uint<253>, duracion: Uint<253>)
  * Finaliza la votación una vez que el tiempo haya expirado.
  * @param timestamp_actual Timestamp Unix (segundos) del momento actual
  */
-export circuit finalizarVotacion(timestamp_actual: Uint<253>): [] {
+export circuit finalizarVotacion(timestamp_actual: Uint<64>): [] {
     // Solo se puede finalizar si está abierta
     assert estado_actual == EstadoVotacion.ABIERTA
         "La votación no está abierta";
 
     // Verificar que el tiempo haya expirado
-    assert disclose(timestamp_actual) >= (hora_inicio + (duracion_segundos as Field)) as Uint<253>
+    assert disclose(timestamp_actual) >= (hora_inicio + (duracion_segundos as Field)) as Uint<64>
         "El tiempo de votación no ha expirado aún";
 
     // Cambiar estado a finalizada
@@ -113,20 +118,20 @@ export circuit finalizarVotacion(timestamp_actual: Uint<253>): [] {
  * El nullifier evita el doble voto sin revelar la identidad del votante.
  *
  * @param candidato Nombre del candidato elegido
- * @param nullifier Hash único derivado del DNI del votante (witness privado)
+ * @param nullifier Hash único derivado del DNI del votante (witness privado, 32 bytes)
  * @param timestamp_actual Timestamp Unix (segundos) del momento de la emisión
  */
 export circuit emitirVoto(
     candidato: Opaque<"string">,
-    nullifier: Uint<253>,
-    timestamp_actual: Uint<253>
+    nullifier: Bytes<32>,
+    timestamp_actual: Uint<64>
 ): [] {
     // 1. La votación debe estar abierta
     assert estado_actual == EstadoVotacion.ABIERTA
         "La votación no está abierta";
 
     // 2. Verificar que el tiempo no haya expirado
-    assert disclose(timestamp_actual) < (hora_inicio + (duracion_segundos as Field)) as Uint<253>
+    assert disclose(timestamp_actual) < (hora_inicio + (duracion_segundos as Field)) as Uint<64>
         "El tiempo de votación ha expirado";
 
     // 3. Verificar que el candidato esté registrado
@@ -144,8 +149,8 @@ export circuit emitirVoto(
     const votos_actuales = conteo_votos.member(candidato)
         ? conteo_votos.lookup(candidato)
         : 0;
-    conteo_votos.insert(candidato, (votos_actuales + (1 as Field)) as Uint<253>);
+    conteo_votos.insert(candidato, (votos_actuales + (1 as Uint<32>)) as Uint<32>);
 
     // 7. Incrementar contador global
-    total_votos = (total_votos + (1 as Field)) as Uint<253>;
+    total_votos = (total_votos + (1 as Uint<32>)) as Uint<32>;
 }

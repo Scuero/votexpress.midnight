@@ -13,33 +13,38 @@ import CompactStandardLibrary;
 // Estructura interna para procesar los datos del DNI dentro del circuito ZK.
 // Todos estos campos son privados por defecto (witness) — no se publican.
 export struct DatosDNI {
-    numero_dni: Uint<253>;
+    // Un DNI argentino tiene como máximo 8 dígitos (< 100.000.000),
+    // Uint<32> sobra de sobra y es mucho más barato de probar que Uint<253>.
+    numero_dni: Uint<32>;
     apellido_nombres: Opaque<"string">;
     sexo: Opaque<"string">;
     fecha_nacimiento: Opaque<"string">;
-    numero_tramite: Uint<253>;
+    numero_tramite: Uint<32>;
 }
 
 // Ledger público: mapeo de Hash(DNI) → booleano
 // Permite verificar si un DNI ya fue registrado sin revelar cuál es.
-export ledger dni_registrados: Map<Uint<253>, Boolean>;
+// El hash es la salida de persistentHash/SHA-256, así que su tipo natural
+// es Bytes<32> (no un entero acotado de 253/254 bits).
+export ledger dni_registrados: Map<Bytes<32>, Boolean>;
 
 // Contador público de DNIs registrados
-export ledger total_registrados: Uint<253>;
+export ledger total_registrados: Uint<32>;
 
 /**
  * Registra un DNI de forma privada en la red Midnight.
  *
- * El hash_unico se computa off-chain (SHA-256 del DNI + datos) y se usa
- * como nullifier para evitar registros duplicados.
+ * El hash_unico se computa off-chain (o vía persistentHash dentro del propio
+ * circuito) como SHA-256 del DNI + datos, y se usa como nullifier para
+ * evitar registros duplicados.
  *
  * Los datos del struct DatosDNI permanecen 100% privados ya que
  * NO se usa disclose() sobre ellos.
  *
  * @param datos Datos completos del DNI (privados, nunca se publican)
- * @param hash_unico Hash SHA-256 derivado del DNI (se publica como commitment)
+ * @param hash_unico Hash SHA-256 (32 bytes) derivado del DNI (se publica como commitment)
  */
-export circuit registrarDNI(datos: DatosDNI, hash_unico: Uint<253>): [] {
+export circuit registrarDNI(datos: DatosDNI, hash_unico: Bytes<32>): [] {
     // 1. Verificar que este DNI (vía hash) no haya sido registrado antes
     assert !dni_registrados.member(hash_unico)
         "Este DNI ya fue registrado previamente en la red Midnight";
@@ -49,5 +54,5 @@ export circuit registrarDNI(datos: DatosDNI, hash_unico: Uint<253>): [] {
     dni_registrados.insert(hash_unico, true);
 
     // 3. Incrementar contador público
-    total_registrados = (total_registrados + (1 as Field)) as Uint<253>;
+    total_registrados = (total_registrados + (1 as Uint<32>)) as Uint<32>;
 }
