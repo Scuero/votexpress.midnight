@@ -1,46 +1,60 @@
 # Dockerfile para Cloud Run - VotExpress Midnight Web App
-# Stage 1: Build
-FROM node:20-alpine AS builder
+# Stage 1: Build (usamos Debian slim para compatibilidad con el compilador compactc binario)
+FROM node:20-slim AS builder
 
 WORKDIR /workspace
 
-# Instalar dependencias del sistema
-RUN apk add --no-cache libc6-compat curl bash
+# Instalar dependencias necesarias para descargar e instalar el compilador
+RUN apt-get update && apt-get install -y \
+    curl \
+    bash \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copiar configuración de la app y contrato
+# Descargar e instalar el compilador Compact oficial
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+
+# Configurar el PATH para incluir las herramientas de Compact
+ENV PATH="/root/.compact/bin:${PATH}"
+
+# Descargar la versión del compilador compatible
+RUN compact update 0.23.0
+
+# Copiar configuraciones generales
 COPY app/package*.json ./app/
 COPY app/tsconfig.json ./app/
 COPY app/next.config.mjs ./app/
 COPY contract/ ./contract/
 
-# Instalar dependencias npm
+# Instalar dependencias npm de Next.js
 WORKDIR /workspace/app
 RUN npm install
 
-# Crear directorio public si no existe
+# Crear directorio public para evitar errores de copia
 RUN mkdir -p public
 
-# Copiar el código fuente de la app y assets públicos
+# Copiar código fuente
 COPY app/src ./src
 COPY app/public ./public
 
-# Compilar binding de Compact (fallback silencioso si compactc no está disponible)
-RUN npm run build:compact || true
+# Compilar los contratos Compact reales ZK (generará los bindings de typescript en src/managed)
+RUN compact compile ../contract/votacion.compact --out src/managed/votacion && \
+    compact compile ../contract/registro_dni.compact --out src/managed/registro_dni
 
-# Compilar la aplicación Next.js
+# Compilar la aplicación Next.js standalone
 RUN npm run build
 
-# Stage 2: Runner de producción minimalista
+# Stage 2: Runner de producción minimalista (Alpine liviano para el servidor web Node)
 FROM node:20-alpine AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
-# Cloud Run inyecta PORT automáticamente, default 8080
+# Cloud Run inyecta PORT automáticamente, por defecto 8080
 ENV PORT=8080
 ENV HOSTNAME="0.0.0.0"
 
-# Copiar assets generados
+# Copiar assets generados en el build
 COPY --from=builder /workspace/app/public ./public
 COPY --from=builder /workspace/app/.next/standalone ./
 COPY --from=builder /workspace/app/.next/static ./.next/static
