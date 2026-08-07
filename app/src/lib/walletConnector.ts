@@ -200,3 +200,13 @@ export function formatAddress(address: string, chars = 6): string {
   if (address.length <= chars * 2 + 3) return address;
   return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
 }
+
+let activeWalletApi: WalletAPI | null = null;
+
+export function getActiveWalletApi(): WalletAPI | null {
+  return activeWalletApi;
+}
+
+export function setActiveWalletApi(api: WalletAPI | null): void {
+  activeWalletApi = api;
+}

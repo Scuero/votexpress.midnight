@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   isLaceInstalled,
   connectLaceWallet,
   getWalletState,
   formatAddress,
   WalletAPI,
-  WalletState
+  WalletState,
+  setActiveWalletApi
 } from '../lib/walletConnector';
 
 interface WalletConnectProps {
@@ -20,7 +21,7 @@ export default function WalletConnect({ onWalletConnected, label = 'Conectar Lac
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [walletState, setWalletState] = useState<WalletState | null>(null);
-  const [walletApi, setWalletApi] = useState<WalletAPI | null>(null);
+  const walletApiRef = useRef<WalletAPI | null>(null);
 
   useEffect(() => {
     setInstalled(isLaceInstalled());
@@ -32,7 +33,8 @@ export default function WalletConnect({ onWalletConnected, label = 'Conectar Lac
     try {
       const api = await connectLaceWallet();
       const state = await getWalletState(api);
-      setWalletApi(api);
+      walletApiRef.current = api;
+      setActiveWalletApi(api);
       setWalletState(state);
       onWalletConnected(api, state);
     } catch (err: any) {
@@ -44,7 +46,8 @@ export default function WalletConnect({ onWalletConnected, label = 'Conectar Lac
   };
 
   const handleDisconnect = () => {
-    setWalletApi(null);
+    walletApiRef.current = null;
+    setActiveWalletApi(null);
     setWalletState(null);
     onWalletConnected(null, null);
   };

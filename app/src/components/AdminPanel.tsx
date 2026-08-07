@@ -13,7 +13,6 @@ interface AdminPanelProps {
 
 export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) {
   const [adminWallet, setAdminWallet] = useState<WalletState | null>(null);
-  const [adminApi, setAdminApi] = useState<WalletAPI | null>(null);
   const [newCandidate, setNewCandidate] = useState('');
   const [durationHours, setDurationHours] = useState(24);
   const [loading, setLoading] = useState(false);
@@ -33,7 +32,6 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
   };
 
   const handleWalletConnected = (api: WalletAPI | null, state: WalletState | null) => {
-    setAdminApi(api);
     setAdminWallet(state);
   };
 
