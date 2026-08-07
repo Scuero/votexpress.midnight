@@ -1,4 +1,4 @@
-pragma language_version 0.23;
+pragma language_version >= 0.15.0;
 
 /**
  * Contrato de Registro de Identidad Privada — Midnight Network
