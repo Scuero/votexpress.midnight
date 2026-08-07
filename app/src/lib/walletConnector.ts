@@ -45,9 +45,11 @@ function getLaceProvider(): any | null {
   return null;
 }
 
+import { getCachedConfig } from './midnightProviders';
+
 /**
  * Conecta la wallet Lace y obtiene la API autorizada.
- * Solicita permiso al usuario vía el popup de la extensión.
+ * Soporta tanto el método legacy 'enable()' como el método estándar 'connect(networkId)'.
  */
 export async function connectLaceWallet(): Promise<WalletAPI> {
   const provider = getLaceProvider();
@@ -58,7 +60,35 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
   }
 
   try {
-    const walletApi = await provider.enable();
+    let walletApi: any;
+    if (typeof provider.enable === 'function') {
+      walletApi = await provider.enable();
+    } else if (typeof provider.connect === 'function') {
+      const config = getCachedConfig();
+      // Formatear network ID compatible: local -> 'undeployed', testnet -> 'preprod', mainnet -> 'mainnet'
+      const netId = config.network === 'local' ? 'undeployed' : (config.network === 'testnet' ? 'preprod' : 'mainnet');
+      walletApi = await provider.connect(netId);
+    } else {
+      // Si el objeto tiene un método enable/connect interno por ser una estructura anidada
+      const keys = Object.keys(provider);
+      let foundMethod = false;
+      for (const k of keys) {
+        if (provider[k] && typeof provider[k].connect === 'function') {
+          const config = getCachedConfig();
+          const netId = config.network === 'local' ? 'undeployed' : (config.network === 'testnet' ? 'preprod' : 'mainnet');
+          walletApi = await provider[k].connect(netId);
+          foundMethod = true;
+          break;
+        } else if (provider[k] && typeof provider[k].enable === 'function') {
+          walletApi = await provider[k].enable();
+          foundMethod = true;
+          break;
+        }
+      }
+      if (!foundMethod) {
+        throw new Error('El proveedor inyectado de Lace no expone los métodos enable() ni connect().');
+      }
+    }
     return walletApi;
   } catch (error: any) {
     if (error?.code === -1 || error?.message?.includes('rejected')) {
