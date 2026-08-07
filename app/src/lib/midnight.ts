@@ -90,15 +90,58 @@ class SimulatedMidnightService implements IMidnightService {
       .map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
+  // Sincronizar el estado actual con el servidor para soporte multidispositivo
+  private async pullState(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    try {
+      const res = await fetch('/api/ledger');
+      if (res.ok) {
+        const data = await res.json();
+        this.estado = data.estado;
+        this.candidatos = new Map(data.candidatos);
+        this.nullifiers = new Set(data.nullifiers);
+        this.dniRegistrados = new Set(data.dniRegistrados);
+        this.horaInicio = data.horaInicio;
+        this.duracionSegundos = data.duracionSegundos;
+        this.totalVotos = data.totalVotos;
+        this.hourlySnapshots = data.hourlySnapshots;
+      }
+    } catch (err) {
+      console.warn('Error de lectura en ledger simulado:', err);
+    }
+  }
+
+  private async pushState(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    try {
+      await fetch('/api/ledger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          estado: this.estado,
+          candidatos: Array.from(this.candidatos.entries()),
+          nullifiers: Array.from(this.nullifiers.values()),
+          dniRegistrados: Array.from(this.dniRegistrados.values()),
+          horaInicio: this.horaInicio,
+          duracionSegundos: this.duracionSegundos,
+          totalVotos: this.totalVotos,
+          hourlySnapshots: this.hourlySnapshots,
+        })
+      });
+    } catch (err) {
+      console.warn('Error al escribir en ledger simulado:', err);
+    }
+  }
+
   private startSnapshotTimer(): void {
     if (this.snapshotInterval) clearInterval(this.snapshotInterval);
-    // Tomar snapshot inicial
     this.takeSnapshot();
-    // Tomar snapshot cada hora (3600000ms), pero para demo cada 60s
-    const intervalMs = 60_000; // 1 minuto en demo, en prod sería 3600_000
-    this.snapshotInterval = setInterval(() => {
+    const intervalMs = 60_000; // 1 minuto en demo
+    this.snapshotInterval = setInterval(async () => {
+      await this.pullState();
       if (this.estado === 'ABIERTA') {
         this.takeSnapshot();
+        await this.pushState();
       } else {
         if (this.snapshotInterval) clearInterval(this.snapshotInterval);
       }
@@ -116,6 +159,7 @@ class SimulatedMidnightService implements IMidnightService {
 
   async registrarCandidato(nombre: string): Promise<TxResult> {
     await this.simulateDelay(800);
+    await this.pullState();
 
     if (this.estado !== 'CERRADA') {
       throw new Error('No se pueden agregar candidatos con la votación activa o finalizada.');
@@ -128,6 +172,7 @@ class SimulatedMidnightService implements IMidnightService {
     }
 
     this.candidatos.set(nombre, 0);
+    await this.pushState();
 
     return {
       success: true,
@@ -139,6 +184,7 @@ class SimulatedMidnightService implements IMidnightService {
 
   async iniciarVotacion(duracionSegundos?: number): Promise<TxResult> {
     await this.simulateDelay(1500);
+    await this.pullState();
 
     if (this.estado !== 'CERRADA') {
       throw new Error('La votación ya fue iniciada o finalizada.');
@@ -152,6 +198,7 @@ class SimulatedMidnightService implements IMidnightService {
     this.estado = 'ABIERTA';
     this.hourlySnapshots = [];
     this.startSnapshotTimer();
+    await this.pushState();
 
     return {
       success: true,
@@ -163,6 +210,7 @@ class SimulatedMidnightService implements IMidnightService {
 
   async finalizarVotacion(): Promise<TxResult> {
     await this.simulateDelay(1000);
+    await this.pullState();
 
     if (this.estado !== 'ABIERTA') {
       throw new Error('La votación no está abierta.');
@@ -177,6 +225,7 @@ class SimulatedMidnightService implements IMidnightService {
     this.estado = 'FINALIZADA';
     this.takeSnapshot(); // Snapshot final
     if (this.snapshotInterval) clearInterval(this.snapshotInterval);
+    await this.pushState();
 
     return {
       success: true,
@@ -188,6 +237,7 @@ class SimulatedMidnightService implements IMidnightService {
 
   async emitirVoto(candidato: string, nullifierHex: string): Promise<VoteSubmissionResult> {
     await this.simulateDelay(2000);
+    await this.pullState();
 
     if (this.estado !== 'ABIERTA') {
       throw new Error('La votación no está abierta.');
@@ -210,6 +260,7 @@ class SimulatedMidnightService implements IMidnightService {
     this.nullifiers.add(nullifierHex);
     this.candidatos.set(candidato, (this.candidatos.get(candidato) || 0) + 1);
     this.totalVotos++;
+    await this.pushState();
 
     return {
       success: true,
@@ -224,12 +275,14 @@ class SimulatedMidnightService implements IMidnightService {
 
   async registrarDni(hashUnico: string): Promise<TxResult> {
     await this.simulateDelay(1000);
+    await this.pullState();
 
     if (this.dniRegistrados.has(hashUnico)) {
       throw new Error('Este DNI ya fue registrado previamente en la red Midnight.');
     }
 
     this.dniRegistrados.add(hashUnico);
+    await this.pushState();
 
     return {
       success: true,
@@ -240,6 +293,7 @@ class SimulatedMidnightService implements IMidnightService {
   }
 
   async getLedgerState(): Promise<LedgerState> {
+    await this.pullState();
     const now = Math.floor(Date.now() / 1000);
     let tiempoRestante = -1;
 
@@ -251,6 +305,7 @@ class SimulatedMidnightService implements IMidnightService {
         this.takeSnapshot();
         if (this.snapshotInterval) clearInterval(this.snapshotInterval);
         tiempoRestante = 0;
+        await this.pushState();
       }
     } else if (this.estado === 'FINALIZADA') {
       tiempoRestante = 0;
