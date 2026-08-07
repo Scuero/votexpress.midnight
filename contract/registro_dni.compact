@@ -1,0 +1,51 @@
+pragma language_version 0.23;
+
+/**
+ * Contrato de Registro de Identidad Privada — Midnight Network
+ *
+ * Permite registrar un DNI Argentino en la blockchain de forma privada.
+ * Solo se almacena un hash único del DNI (nullifier) en el ledger público,
+ * los datos personales NUNCA se revelan on-chain.
+ */
+
+// Estructura interna para procesar los datos del DNI dentro del circuito ZK.
+// Todos estos campos son privados por defecto (witness) — no se publican.
+export struct DatosDNI {
+    numero_dni: Uint256;
+    apellido_nombres: Opaque<"string">;
+    sexo: Opaque<"string">;
+    fecha_nacimiento: Opaque<"string">;
+    numero_tramite: Uint256;
+}
+
+// Ledger público: mapeo de Hash(DNI) → booleano
+// Permite verificar si un DNI ya fue registrado sin revelar cuál es.
+export ledger dni_registrados: Map<Uint256, Boolean>;
+
+// Contador público de DNIs registrados
+export ledger total_registrados: Counter;
+
+/**
+ * Registra un DNI de forma privada en la red Midnight.
+ *
+ * El hash_unico se computa off-chain (SHA-256 del DNI + datos) y se usa
+ * como nullifier para evitar registros duplicados.
+ *
+ * Los datos del struct DatosDNI permanecen 100% privados ya que
+ * NO se usa disclose() sobre ellos.
+ *
+ * @param datos Datos completos del DNI (privados, nunca se publican)
+ * @param hash_unico Hash SHA-256 derivado del DNI (se publica como commitment)
+ */
+export circuit registrarDNI(datos: DatosDNI, hash_unico: Uint256): [] {
+    // 1. Verificar que este DNI (vía hash) no haya sido registrado antes
+    assert(!dni_registrados.member(hash_unico),
+        "Este DNI ya fue registrado previamente en la red Midnight");
+
+    // 2. Almacenar públicamente el hash indicando que ya está registrado
+    //    Los datos del DNI permanecen privados (no hay disclose sobre 'datos')
+    dni_registrados.insert(hash_unico, true);
+
+    // 3. Incrementar contador público
+    total_registrados.increment(1);
+}

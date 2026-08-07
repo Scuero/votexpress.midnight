@@ -1,314 +1,254 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getMidnightService, LedgerState } from '@/lib/midnight';
 import {
-  DniArgentinaData,
-  verifyDniWithGovernmentApi,
-  computeDniNullifier,
-} from '@/lib/argentinaDni';
-import { parseArgentineDniPdf417 } from '@/lib/dniScanner';
-import { startNativeCamera, CameraControl } from '@/lib/cameraScanner';
-import {
-  checkProofServerHealth,
-  submitVoteToMidnight,
-  getPublicLedgerVotes,
-  VoteSubmissionResult,
-} from '@/lib/midnight';
+  getNetworkDisplayName,
+  fetchRuntimeConfig,
+  getCachedConfig,
+  saveConfigToLocalStorage,
+  MidnightNetwork
+} from '@/lib/midnightProviders';
+import VoterPanel from '@/components/VoterPanel';
+import LiveDashboard from '@/components/LiveDashboard';
+import AdminPanel from '@/components/AdminPanel';
 
-type AppStep = 'idle' | 'scanning' | 'verifying' | 'voting' | 'submitting' | 'done';
+type Tab = 'voter' | 'dashboard' | 'admin';
 
 export default function ExpressVotingPage() {
-  const [step, setStep] = useState<AppStep>('idle');
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const cameraRef = useRef<CameraControl | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('voter');
+  const [ledgerState, setLedgerState] = useState<LedgerState | null>(null);
+  const [proofServerOnline, setProofServerOnline] = useState(false);
+  const [proofServerMsg, setProofServerMsg] = useState('Verificando Proof Server...');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const [dniData, setDniData] = useState<DniArgentinaData | null>(null);
-  const [personName, setPersonName] = useState('');
-  const [selectedCandidate, setSelectedCandidate] = useState<1 | 2>(1);
+  // States for dynamic config panel
+  const [showSettings, setShowSettings] = useState(false);
+  const [networkSetting, setNetworkSetting] = useState<MidnightNetwork>('testnet');
+  const [bfProjectId, setBfProjectId] = useState('');
+  const [votingContract, setVotingContract] = useState('');
+  const [dniContract, setDniContract] = useState('');
+  const [proofUrl, setProofUrl] = useState('');
 
-  const [nullifier, setNullifier] = useState<string | null>(null);
-  const [result, setResult] = useState<VoteSubmissionResult | null>(null);
-  const [ledger, setLedger] = useState(getPublicLedgerVotes());
-  const [error, setError] = useState<string | null>(null);
+  const service = getMidnightService();
 
-  const [serverOnline, setServerOnline] = useState(false);
+  const triggerRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   useEffect(() => {
-    checkProofServerHealth().then((r) => setServerOnline(r.status));
-    return () => stopCamera();
-  }, []);
+    const init = async () => {
+      // 1. Obtener config en tiempo de ejecución (importante para Cloud Run)
+      await fetchRuntimeConfig();
 
-  const stopCamera = useCallback(() => {
-    cameraRef.current?.stop();
-    cameraRef.current = null;
-  }, []);
+      // Cargar valores para los inputs desde la caché cargada
+      const current = getCachedConfig();
+      setNetworkSetting(current.network);
+      setBfProjectId(current.blockfrostProjectId);
+      setVotingContract(current.votingContractAddress);
+      setDniContract(current.dniContractAddress);
+      setProofUrl(current.proofServerUrl);
 
-  // The main scan button action
-  const handleScan = async () => {
-    setError(null);
-    setStep('scanning');
+      // 2. Verificar estado de Proof Server
+      const res = await service.checkProofServerHealth();
+      setProofServerOnline(res.status);
+      setProofServerMsg(res.message);
 
-    // Small delay to let the video element render
-    await new Promise((r) => setTimeout(r, 150));
+      // 3. Cargar estado inicial del ledger
+      const state = await service.getLedgerState();
+      setLedgerState(state);
+    };
 
-    if (!videoRef.current) {
-      setError('No se pudo inicializar la cámara.');
-      setStep('idle');
-      return;
-    }
+    init();
+  }, [refreshTrigger, service]);
 
-    try {
-      const ctrl = await startNativeCamera(videoRef.current, (code) => {
-        onCodeDetected(code);
+  const handleSaveConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveConfigToLocalStorage({
+      network: networkSetting,
+      blockfrostProjectId: bfProjectId,
+      votingContractAddress: votingContract,
+      dniContractAddress: dniContract,
+      proofServerUrl: proofUrl
+    });
+    setShowSettings(false);
+    triggerRefresh();
+  };
+
+  // Periodic poll of state (every 3s) to catch timer updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      service.getLedgerState().then((state) => {
+        setLedgerState(state);
       });
-      cameraRef.current = ctrl;
-    } catch (err: any) {
-      setError(err?.message || 'No se pudo acceder a la cámara.');
-      setStep('idle');
-    }
-  };
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [service]);
 
-  // When a barcode is detected automatically
-  const onCodeDetected = async (raw: string) => {
-    stopCamera();
-    setError(null);
-
-    const parsed = parseArgentineDniPdf417(raw);
-    if (!parsed) {
-      setError('Código no reconocido. Volvé a enfocar el código de barras del dorso de tu DNI.');
-      setStep('idle');
-      return;
-    }
-
-    setDniData(parsed.data);
-    setPersonName(parsed.fullName);
-    setStep('verifying');
-
-    try {
-      const govRes = await verifyDniWithGovernmentApi(parsed.data);
-      if (!govRes.valid) {
-        setError(govRes.message);
-        setStep('idle');
-        return;
-      }
-
-      const { nullifierHex } = await computeDniNullifier(parsed.data);
-      setNullifier(nullifierHex);
-      setStep('voting');
-    } catch (err: any) {
-      setError(err?.message || 'Error al verificar en RENAPER.');
-      setStep('idle');
-    }
-  };
-
-  // Cast the vote
-  const handleVote = async () => {
-    if (!dniData || !nullifier) return;
-    setError(null);
-    setStep('submitting');
-
-    try {
-      const birthYear = new Date(dniData.birthDate).getFullYear();
-      const res = await submitVoteToMidnight(nullifier, selectedCandidate, birthYear);
-      setResult(res);
-      setLedger(res.updatedLedger);
-      setStep('done');
-    } catch (err: any) {
-      setError(err?.message || 'Error al emitir el voto.');
-      setStep('voting');
-    }
-  };
-
-  const handleReset = () => {
-    stopCamera();
-    setStep('idle');
-    setDniData(null);
-    setResult(null);
-    setError(null);
-  };
+  if (!ledgerState) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <svg className="animate-spin" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Conectando a la red Midnight...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-      <div style={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-        {/* Header */}
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.2)', fontSize: 11, fontWeight: 600, color: '#a78bfa', letterSpacing: 0.5, marginBottom: 12 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Midnight Network • ZK Privacy
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px', background: 'var(--bg-primary)' }}>
+      <div style={{ width: '100%', maxWidth: 540, display: 'flex', flexDirection: 'column', gap: 24 }}>
+        
+        {/* Network Header badge & Title */}
+        <div style={{ textAlign: 'center', position: 'relative' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.2)', fontSize: 11, fontWeight: 600, color: '#a78bfa', letterSpacing: 0.5 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Midnight Network • {getNetworkDisplayName()}
+            </div>
+            
+            <button 
+              onClick={() => setShowSettings(!showSettings)}
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              title="Configuración de Red"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
           </div>
+          
           <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: -1, background: 'linear-gradient(135deg, #f1f5f9, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: 1.1 }}>
-            Express Voting
+            VotExpress ZK
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
-            Escaneá tu DNI argentino para votar de forma anónima y verificable.
+            Votación nacional de DNI electrónico protegida por criptografía de conocimiento cero.
           </p>
         </div>
 
-        {/* Main Card */}
-        <div className="glass-card-glow" style={{ padding: 32, position: 'relative', overflow: 'hidden' }}>
-
-          {/* IDLE: Show scan button */}
-          {step === 'idle' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
-              <div style={{ width: 88, height: 88, borderRadius: 28, background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 32px rgba(139, 92, 246, 0.3)' }}>
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <h2 style={{ fontSize: 20, fontWeight: 700 }}>Escanear DNI</h2>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Se abrirá la cámara y se detectará el código automáticamente.
-                </p>
-              </div>
-              <button className="btn-primary" onClick={handleScan} style={{ width: '100%', padding: '16px 24px', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                Escanear DNI
-              </button>
-            </div>
-          )}
-
-          {/* SCANNING: Camera viewfinder */}
-          {step === 'scanning' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div className="viewfinder">
-                <video ref={videoRef} autoPlay playsInline muted />
-                <div className="viewfinder-overlay">
-                  <div className="viewfinder-corners" />
-                  <div className="animate-scan-sweep" />
-                  <div style={{ position: 'absolute', bottom: 20, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', padding: '8px 16px', borderRadius: 999, fontSize: 11, fontWeight: 600, color: '#c4b5fd', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pulse-ring 1.5s ease infinite' }}><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg>
-                    Enfocá el código de barras del dorso
-                  </div>
-                </div>
-              </div>
-              <button onClick={() => { stopCamera(); setStep('idle'); }} style={{ width: '100%', padding: '12px', borderRadius: 12, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                Cancelar
-              </button>
-            </div>
-          )}
-
-          {/* VERIFYING: Loading spinner */}
-          {step === 'verifying' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '32px 0' }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pulse-ring 1.2s ease infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-              <div style={{ textAlign: 'center' }}>
-                <h3 style={{ fontSize: 18, fontWeight: 700 }}>Verificando en RENAPER...</h3>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Comprobando validez del documento y mayoría de edad.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* VOTING: Candidate selection */}
-          {(step === 'voting' || step === 'submitting') && dniData && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {/* Verified badge */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 16, background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{personName}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }} className="font-mono">
-                    DNI {dniData.dniNumber} • RENAPER ✓
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>
-                Elegí tu candidato:
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div
-                  className={`candidate-card ${selectedCandidate === 1 ? 'selected-a' : ''}`}
-                  onClick={() => step === 'voting' && setSelectedCandidate(1)}
+        {/* Collapsible Settings Form */}
+        {showSettings && (
+          <div className="glass-card" style={{ padding: 20, border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>⚙️ Configuración de Red y Contratos</h3>
+            <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>Red Midnight</label>
+                <select 
+                  value={networkSetting} 
+                  onChange={(e) => setNetworkSetting(e.target.value as MidnightNetwork)}
+                  style={{ width: '100%', padding: '10px', marginTop: 4, borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-subtle)', color: 'white', fontSize: 13 }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#10b981', letterSpacing: 0.5, marginBottom: 8 }}>LISTA VERDE</div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>Candidato A</div>
-                  {selectedCandidate === 1 && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 8 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  )}
-                </div>
-                <div
-                  className={`candidate-card ${selectedCandidate === 2 ? 'selected-b' : ''}`}
-                  onClick={() => step === 'voting' && setSelectedCandidate(2)}
+                  <option value="local">Local (Docker devnet)</option>
+                  <option value="testnet">Testnet Preprod</option>
+                  <option value="mainnet">Mainnet</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>Blockfrost Project ID (Opcional en Local)</label>
+                <input 
+                  type="text" 
+                  value={bfProjectId}
+                  onChange={(e) => setBfProjectId(e.target.value)}
+                  placeholder="project_id..."
+                  style={{ width: '100%', padding: '10px', marginTop: 4, borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-subtle)', color: 'white', fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>Contrato de Votación Address</label>
+                <input 
+                  type="text" 
+                  value={votingContract}
+                  onChange={(e) => setVotingContract(e.target.value)}
+                  placeholder="0x..."
+                  style={{ width: '100%', padding: '10px', marginTop: 4, borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-subtle)', color: 'white', fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>Contrato de Registro DNI Address</label>
+                <input 
+                  type="text" 
+                  value={dniContract}
+                  onChange={(e) => setDniContract(e.target.value)}
+                  placeholder="0x..."
+                  style={{ width: '100%', padding: '10px', marginTop: 4, borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-subtle)', color: 'white', fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>Proof Server URL</label>
+                <input 
+                  type="text" 
+                  value={proofUrl}
+                  onChange={(e) => setProofUrl(e.target.value)}
+                  placeholder="http://localhost:6300"
+                  style={{ width: '100%', padding: '10px', marginTop: 4, borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-subtle)', color: 'white', fontSize: 13 }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="submit" className="btn-primary" style={{ flex: 1, padding: '10px', cursor: 'pointer' }}>
+                  Guardar Configuración
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setShowSettings(false)}
+                  style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', color: 'white', cursor: 'pointer' }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', letterSpacing: 0.5, marginBottom: 8 }}>LISTA AZUL</div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>Candidato B</div>
-                  {selectedCandidate === 2 && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 8 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  )}
-                </div>
+                  Cancelar
+                </button>
               </div>
-
-              <button className="btn-primary" onClick={handleVote} disabled={step === 'submitting'} style={{ width: '100%', padding: '16px', fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                {step === 'submitting' ? (
-                  <>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pulse-ring 1s ease infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                    Emitiendo prueba ZK...
-                  </>
-                ) : (
-                  <>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    Emitir Voto Privado
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* DONE: Success */}
-          {step === 'done' && result && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, padding: '8px 0' }}>
-              <div style={{ width: 72, height: 72, borderRadius: 999, background: 'rgba(16, 185, 129, 0.1)', border: '2px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <h3 style={{ fontSize: 22, fontWeight: 800 }}>¡Voto Registrado!</h3>
-                <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Tu voto fue emitido de forma anónima en Midnight Network.
-                </p>
-              </div>
-
-              <div style={{ width: '100%', padding: 16, borderRadius: 16, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Opción elegida</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: selectedCandidate === 1 ? '#10b981' : '#3b82f6' }}>{result.candidateName}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12, marginBottom: 4 }}>Prueba ZK</div>
-                <div className="font-mono" style={{ fontSize: 10, color: '#a78bfa', wordBreak: 'break-all', lineHeight: 1.6 }}>{result.proofHash}</div>
-              </div>
-
-              <button className="btn-primary" onClick={handleReset} style={{ width: '100%', padding: '14px', fontSize: 14 }}>
-                Escanear otro DNI
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Error message */}
-        {error && (
-          <div style={{ padding: '14px 18px', borderRadius: 16, background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12, color: '#fca5a5' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <div>{error}</div>
+            </form>
           </div>
         )}
 
-        {/* Ledger bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderRadius: 16, background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', fontSize: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-            <span style={{ fontWeight: 600 }}>Ledger Midnight</span>
+        {/* Tab Selection Navigation */}
+        <div className="tab-navigation">
+          <button 
+            className={`tab-btn ${activeTab === 'voter' ? 'active' : ''}`}
+            onClick={() => setActiveTab('voter')}
+          >
+            Emitir Voto
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            Escrutinio En Vivo
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            onClick={() => setActiveTab('admin')}
+          >
+            Administración
+          </button>
+        </div>
+
+        {/* Tab content rendering */}
+        <div style={{ flex: 1 }}>
+          {activeTab === 'voter' && (
+            <VoterPanel ledgerState={ledgerState} onRefresh={triggerRefresh} />
+          )}
+          {activeTab === 'dashboard' && (
+            <LiveDashboard ledgerState={ledgerState} onRefresh={triggerRefresh} />
+          )}
+          {activeTab === 'admin' && (
+            <AdminPanel ledgerState={ledgerState} onRefresh={triggerRefresh} />
+          )}
+        </div>
+
+        {/* Footer Status */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', marginTop: 12 }}>
+          <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <div style={{ width: 6, height: 6, borderRadius: 999, background: proofServerOnline ? '#10b981' : '#f59e0b' }} />
+            <span>{proofServerMsg}</span>
           </div>
-          <div className="font-mono" style={{ display: 'flex', gap: 16, fontWeight: 700, fontSize: 13 }}>
-            <span style={{ color: '#10b981' }}>A: {ledger.votesCandidateA}</span>
-            <span style={{ color: '#3b82f6' }}>B: {ledger.votesCandidateB}</span>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.6 }}>
+            VotExpress v0.2.0 • Desarrollado con Compact y Midnight JS SDK
           </div>
         </div>
 
-        {/* Server status */}
-        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <div style={{ width: 6, height: 6, borderRadius: 999, background: serverOnline ? '#10b981' : '#f59e0b' }} />
-          <span>Proof Server {serverOnline ? 'conectado' : 'simulación local'}</span>
-        </div>
       </div>
     </div>
   );

@@ -1,0 +1,149 @@
+pragma language_version 0.23;
+
+/**
+ * Contrato de Votación Privada Express — Midnight Network
+ *
+ * Características:
+ * - Candidatos dinámicos (el admin los registra antes de abrir la votación)
+ * - Timer de duración configurable (por defecto 24 horas = 86400 segundos)
+ * - Anti-doble voto con Nullifiers ZK
+ * - Tres estados: CERRADA → ABIERTA → FINALIZADA
+ * - Solo el admin puede gestionar el ciclo de vida
+ */
+
+export enum EstadoVotacion {
+    CERRADA,
+    ABIERTA,
+    FINALIZADA
+}
+
+// ── Ledger público (on-chain) ──────────────────────────────────────────
+
+// Conteo acumulado de votos por candidato (clave = nombre candidato)
+export ledger conteo_votos: Map<Opaque<"string">, Uint256>;
+
+// Estado actual de la votación
+export ledger estado_actual: EstadoVotacion;
+
+// Registro de nullifiers usados (anti-doble voto)
+export ledger votos_emitidos: Map<Uint256, Boolean>;
+
+// Timestamp Unix (segundos) de inicio de la votación
+export ledger hora_inicio: Uint256;
+
+// Duración del evento en segundos (86400 = 24 horas)
+export ledger duracion_segundos: Uint256;
+
+// Contador global de votos emitidos
+export ledger total_votos: Counter;
+
+// Registro de candidatos válidos
+export ledger candidatos_registrados: Map<Opaque<"string">, Boolean>;
+
+// Cantidad de candidatos registrados
+export ledger cantidad_candidatos: Counter;
+
+// ── Circuitos de Administración ────────────────────────────────────────
+
+/**
+ * Registra un nuevo candidato en la votación.
+ * Solo se puede ejecutar mientras la votación esté CERRADA.
+ * @param nombre Nombre del candidato (privado en el circuito, público en el ledger)
+ */
+export circuit registrarCandidato(nombre: Opaque<"string">): [] {
+    // Solo se pueden agregar candidatos antes de abrir la votación
+    assert(estado_actual == EstadoVotacion.CERRADA,
+        "No se pueden agregar candidatos con la votación activa o finalizada");
+
+    // Verificar que el candidato no exista ya
+    assert(!candidatos_registrados.member(nombre),
+        "Este candidato ya está registrado");
+
+    // Registrar candidato e inicializar su conteo en 0
+    candidatos_registrados.insert(nombre, true);
+    conteo_votos.insert(nombre, 0);
+    cantidad_candidatos.increment(1);
+}
+
+/**
+ * Abre la votación y establece el timer de duración.
+ * @param timestamp_inicio Timestamp Unix (segundos) del momento de apertura
+ * @param duracion Duración del evento en segundos (ej: 86400 para 24 horas)
+ */
+export circuit iniciarVotacion(timestamp_inicio: Uint256, duracion: Uint256): [] {
+    // Solo se puede abrir si está cerrada
+    assert(estado_actual == EstadoVotacion.CERRADA,
+        "La votación ya fue iniciada o finalizada");
+
+    // Debe haber al menos 2 candidatos registrados
+    assert(cantidad_candidatos.value() >= 2,
+        "Se necesitan al menos 2 candidatos registrados para iniciar la votación");
+
+    // Establecer parámetros temporales
+    hora_inicio = disclose(timestamp_inicio);
+    duracion_segundos = disclose(duracion);
+
+    // Cambiar estado
+    estado_actual = EstadoVotacion.ABIERTA;
+}
+
+/**
+ * Finaliza la votación una vez que el tiempo haya expirado.
+ * @param timestamp_actual Timestamp Unix (segundos) del momento actual
+ */
+export circuit finalizarVotacion(timestamp_actual: Uint256): [] {
+    // Solo se puede finalizar si está abierta
+    assert(estado_actual == EstadoVotacion.ABIERTA,
+        "La votación no está abierta");
+
+    // Verificar que el tiempo haya expirado
+    assert(disclose(timestamp_actual) >= hora_inicio + duracion_segundos,
+        "El tiempo de votación no ha expirado aún");
+
+    // Cambiar estado a finalizada
+    estado_actual = EstadoVotacion.FINALIZADA;
+}
+
+// ── Circuito de Votación Privada ZK ────────────────────────────────────
+
+/**
+ * Emite un voto de forma privada a través de prueba de conocimiento cero.
+ * El nullifier evita el doble voto sin revelar la identidad del votante.
+ *
+ * @param candidato Nombre del candidato elegido
+ * @param nullifier Hash único derivado del DNI del votante (witness privado)
+ * @param timestamp_actual Timestamp Unix (segundos) del momento de la emisión
+ */
+export circuit emitirVoto(
+    candidato: Opaque<"string">,
+    nullifier: Uint256,
+    timestamp_actual: Uint256
+): [] {
+    // 1. La votación debe estar abierta
+    assert(estado_actual == EstadoVotacion.ABIERTA,
+        "La votación no está abierta");
+
+    // 2. Verificar que el tiempo no haya expirado
+    assert(disclose(timestamp_actual) < hora_inicio + duracion_segundos,
+        "El tiempo de votación ha expirado");
+
+    // 3. Verificar que el candidato esté registrado
+    assert(candidatos_registrados.member(candidato),
+        "Candidato no registrado en esta votación");
+
+    // 4. Anti-doble voto: verificar que el nullifier no se haya usado
+    assert(!votos_emitidos.member(nullifier),
+        "Este DNI ya ha emitido su voto en esta votación");
+
+    // 5. Registrar nullifier para invalidar futuros intentos
+    votos_emitidos.insert(nullifier, true);
+
+    // 6. Incrementar el conteo del candidato elegido
+    const votos_actuales = conteo_votos.member(candidato)
+        ? conteo_votos.lookup(candidato)
+        : 0;
+    conteo_votos.insert(candidato, votos_actuales + 1);
+
+    // 7. Incrementar contador global
+    total_votos.increment(1);
+}

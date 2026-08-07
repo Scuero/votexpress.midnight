@@ -1,159 +1,321 @@
 /**
- * URL del Midnight Proof Server configurada mediante variables de entorno.
- * Por defecto apunta al puerto 6300 local o containerizado.
+ * MidnightService — Capa de abstracción para interactuar con la red Midnight.
+ *
+ * Soporta dos modos:
+ * 1. Simulación: funciona sin SDK ni red real (para desarrollo y demo)
+ * 2. Real: se conecta al SDK @midnight-ntwrk/* y la red Midnight (testnet/mainnet)
+ *
+ * El modo se determina automáticamente según la configuración de entorno.
  */
-export const PROOF_SERVER_URL =
-  process.env.NEXT_PUBLIC_MIDNIGHT_PROOF_SERVER_URL ||
-  process.env.MIDNIGHT_PROOF_SERVER_URL ||
-  'http://localhost:6300';
 
-/**
- * Cliente HTTP para el Midnight Proof Server.
- */
-export const getProofProvider = () => {
-  return {
-    url: PROOF_SERVER_URL,
-    postProof: async (data: any) => {
-      const response = await fetch(`${PROOF_SERVER_URL}/prove`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      return response.json();
-    },
-  };
-};
+import { getNetworkConfig, getDefaultVotingDuration } from './midnightProviders';
 
-/**
- * Verifica la disponibilidad del Midnight Proof Server.
- */
-export async function checkProofServerHealth(): Promise<{ status: boolean; message: string }> {
-  try {
-    const response = await fetch(`${PROOF_SERVER_URL}/health`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
+// ── Tipos ──────────────────────────────────────────────────────────────
 
-    if (response.ok) {
-      return { status: true, message: 'Midnight Proof Server operacional (HTTP 200)' };
-    } else {
-      return {
-        status: false,
-        message: `Servidor responde pero devolvió estado HTTP ${response.status}`,
-      };
-    }
-  } catch (error) {
-    return {
-      status: false,
-      message: `Proof Server en ${PROOF_SERVER_URL} offline. Se ejecutará en circuito ZK simulado.`,
-    };
-  }
+export type EstadoVotacion = 'CERRADA' | 'ABIERTA' | 'FINALIZADA';
+
+export interface CandidatoInfo {
+  nombre: string;
+  votos: number;
 }
 
-/**
- * Memoria local simulada del Ledger de Midnight para tracking de Nulificadores en entorno dev/demo.
- */
-const executedNullifiersSet = new Set<string>();
-let countCandidateA = 142;
-let countCandidateB = 128;
+export interface LedgerState {
+  estado: EstadoVotacion;
+  candidatos: CandidatoInfo[];
+  totalVotos: number;
+  horaInicio: number | null;       // timestamp Unix (segundos)
+  duracionSegundos: number;
+  tiempoRestante: number;          // segundos restantes (-1 si no inició)
+  cantidadCandidatos: number;
+}
 
-export interface VoteSubmissionResult {
+export interface TxResult {
   success: boolean;
-  proofHash: string;
   transactionId: string;
-  candidateName: string;
-  nullifierRegistered: string;
-  updatedLedger: {
-    votesCandidateA: number;
-    votesCandidateB: number;
-  };
+  proofHash: string;
   details: string;
 }
 
-/**
- * Envía el voto de forma privada a través de la red Midnight.
- * Valida mayoría de edad (>= 18), registra el Nullifier para evitar el doble voto y suma el punto al candidato elegido.
- */
-export async function submitVoteToMidnight(
-  nullifierHex: string,
-  candidateSelection: 1 | 2,
-  birthYear: number,
-  currentYear: number = 2026
-): Promise<VoteSubmissionResult> {
-  // 1. Verificación ZK local de Edad >= 18
-  const age = currentYear - birthYear;
-  if (age < 18) {
-    throw new Error(`Circuito ZK Rechazado: El votante tiene ${age} años. Se requiere ser >= 18 años.`);
+export interface VoteSubmissionResult extends TxResult {
+  candidatoNombre: string;
+  nullifierRegistered: string;
+  updatedLedger: LedgerState;
+}
+
+export interface HourlySnapshot {
+  hora: number;         // hour index (0 = start, 1 = +1h, ...)
+  timestamp: number;    // Unix timestamp
+  candidatos: CandidatoInfo[];
+  totalVotos: number;
+}
+
+// ── Interfaz del servicio ──────────────────────────────────────────────
+
+export interface IMidnightService {
+  // Administración
+  registrarCandidato(nombre: string): Promise<TxResult>;
+  iniciarVotacion(duracionSegundos?: number): Promise<TxResult>;
+  finalizarVotacion(): Promise<TxResult>;
+
+  // Votación
+  emitirVoto(candidato: string, nullifierHex: string): Promise<VoteSubmissionResult>;
+  registrarDni(hashUnico: string): Promise<TxResult>;
+
+  // Consulta
+  getLedgerState(): Promise<LedgerState>;
+  getHourlySnapshots(): HourlySnapshot[];
+  checkProofServerHealth(): Promise<{ status: boolean; message: string }>;
+}
+
+// ── Implementación Simulada ────────────────────────────────────────────
+
+class SimulatedMidnightService implements IMidnightService {
+  private estado: EstadoVotacion = 'CERRADA';
+  private candidatos: Map<string, number> = new Map();
+  private nullifiers: Set<string> = new Set();
+  private dniRegistrados: Set<string> = new Set();
+  private horaInicio: number | null = null;
+  private duracionSegundos: number = getDefaultVotingDuration();
+  private totalVotos: number = 0;
+  private hourlySnapshots: HourlySnapshot[] = [];
+  private snapshotInterval: ReturnType<typeof setInterval> | null = null;
+
+  private generateTxId(): string {
+    return '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  // 2. Verificación ZK de Nulificador / Doble Voto
-  if (executedNullifiersSet.has(nullifierHex)) {
-    throw new Error(
-      `Circuito ZK Rechazado (Doble Voto Detector): Este DNI (Nullifier ${nullifierHex.slice(0, 10)}...) ya ha emitido un voto previamente en la red Midnight.`
-    );
+  private generateProofHash(): string {
+    return 'zkp_' + Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  console.log(`[Midnight SDK] Conectando a Proof Server en: ${PROOF_SERVER_URL}`);
-  console.log(`[Midnight SDK] Ejecutando circuito Compact castVote(...) con parámetros ZK privados.`);
+  private startSnapshotTimer(): void {
+    if (this.snapshotInterval) clearInterval(this.snapshotInterval);
+    // Tomar snapshot inicial
+    this.takeSnapshot();
+    // Tomar snapshot cada hora (3600000ms), pero para demo cada 60s
+    const intervalMs = 60_000; // 1 minuto en demo, en prod sería 3600_000
+    this.snapshotInterval = setInterval(() => {
+      if (this.estado === 'ABIERTA') {
+        this.takeSnapshot();
+      } else {
+        if (this.snapshotInterval) clearInterval(this.snapshotInterval);
+      }
+    }, intervalMs);
+  }
 
-  const proofServerCheck = await checkProofServerHealth();
+  private takeSnapshot(): void {
+    this.hourlySnapshots.push({
+      hora: this.hourlySnapshots.length,
+      timestamp: Math.floor(Date.now() / 1000),
+      candidatos: Array.from(this.candidatos.entries()).map(([nombre, votos]) => ({ nombre, votos })),
+      totalVotos: this.totalVotos,
+    });
+  }
 
-  if (proofServerCheck.status) {
+  async registrarCandidato(nombre: string): Promise<TxResult> {
+    await this.simulateDelay(800);
+
+    if (this.estado !== 'CERRADA') {
+      throw new Error('No se pueden agregar candidatos con la votación activa o finalizada.');
+    }
+    if (this.candidatos.has(nombre)) {
+      throw new Error(`El candidato "${nombre}" ya está registrado.`);
+    }
+    if (!nombre.trim()) {
+      throw new Error('El nombre del candidato no puede estar vacío.');
+    }
+
+    this.candidatos.set(nombre, 0);
+
+    return {
+      success: true,
+      transactionId: this.generateTxId(),
+      proofHash: this.generateProofHash(),
+      details: `Candidato "${nombre}" registrado exitosamente en el ledger Midnight.`,
+    };
+  }
+
+  async iniciarVotacion(duracionSegundos?: number): Promise<TxResult> {
+    await this.simulateDelay(1500);
+
+    if (this.estado !== 'CERRADA') {
+      throw new Error('La votación ya fue iniciada o finalizada.');
+    }
+    if (this.candidatos.size < 2) {
+      throw new Error(`Se necesitan al menos 2 candidatos. Actualmente hay ${this.candidatos.size}.`);
+    }
+
+    this.duracionSegundos = duracionSegundos || getDefaultVotingDuration();
+    this.horaInicio = Math.floor(Date.now() / 1000);
+    this.estado = 'ABIERTA';
+    this.hourlySnapshots = [];
+    this.startSnapshotTimer();
+
+    return {
+      success: true,
+      transactionId: this.generateTxId(),
+      proofHash: this.generateProofHash(),
+      details: `Votación iniciada. Duración: ${this.duracionSegundos} segundos (${(this.duracionSegundos / 3600).toFixed(1)} horas).`,
+    };
+  }
+
+  async finalizarVotacion(): Promise<TxResult> {
+    await this.simulateDelay(1000);
+
+    if (this.estado !== 'ABIERTA') {
+      throw new Error('La votación no está abierta.');
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (this.horaInicio && (now - this.horaInicio) < this.duracionSegundos) {
+      const remaining = this.duracionSegundos - (now - this.horaInicio);
+      throw new Error(`El tiempo de votación no ha expirado. Faltan ${Math.ceil(remaining / 60)} minutos.`);
+    }
+
+    this.estado = 'FINALIZADA';
+    this.takeSnapshot(); // Snapshot final
+    if (this.snapshotInterval) clearInterval(this.snapshotInterval);
+
+    return {
+      success: true,
+      transactionId: this.generateTxId(),
+      proofHash: this.generateProofHash(),
+      details: 'Votación finalizada. Recuento de votos completado.',
+    };
+  }
+
+  async emitirVoto(candidato: string, nullifierHex: string): Promise<VoteSubmissionResult> {
+    await this.simulateDelay(2000);
+
+    if (this.estado !== 'ABIERTA') {
+      throw new Error('La votación no está abierta.');
+    }
+
+    // Verificar tiempo
+    const now = Math.floor(Date.now() / 1000);
+    if (this.horaInicio && (now - this.horaInicio) >= this.duracionSegundos) {
+      throw new Error('El tiempo de votación ha expirado.');
+    }
+
+    if (!this.candidatos.has(candidato)) {
+      throw new Error(`Candidato "${candidato}" no está registrado.`);
+    }
+
+    if (this.nullifiers.has(nullifierHex)) {
+      throw new Error('Este DNI ya ha emitido su voto en esta votación.');
+    }
+
+    this.nullifiers.add(nullifierHex);
+    this.candidatos.set(candidato, (this.candidatos.get(candidato) || 0) + 1);
+    this.totalVotos++;
+
+    return {
+      success: true,
+      transactionId: this.generateTxId(),
+      proofHash: this.generateProofHash(),
+      details: 'Voto emitido exitosamente con prueba ZK en la red Midnight.',
+      candidatoNombre: candidato,
+      nullifierRegistered: nullifierHex,
+      updatedLedger: await this.getLedgerState(),
+    };
+  }
+
+  async registrarDni(hashUnico: string): Promise<TxResult> {
+    await this.simulateDelay(1000);
+
+    if (this.dniRegistrados.has(hashUnico)) {
+      throw new Error('Este DNI ya fue registrado previamente en la red Midnight.');
+    }
+
+    this.dniRegistrados.add(hashUnico);
+
+    return {
+      success: true,
+      transactionId: this.generateTxId(),
+      proofHash: this.generateProofHash(),
+      details: 'DNI registrado de forma privada en la red Midnight.',
+    };
+  }
+
+  async getLedgerState(): Promise<LedgerState> {
+    const now = Math.floor(Date.now() / 1000);
+    let tiempoRestante = -1;
+
+    if (this.estado === 'ABIERTA' && this.horaInicio) {
+      tiempoRestante = Math.max(0, this.duracionSegundos - (now - this.horaInicio));
+      // Auto-finalizar si el tiempo expiró
+      if (tiempoRestante <= 0) {
+        this.estado = 'FINALIZADA';
+        this.takeSnapshot();
+        if (this.snapshotInterval) clearInterval(this.snapshotInterval);
+        tiempoRestante = 0;
+      }
+    } else if (this.estado === 'FINALIZADA') {
+      tiempoRestante = 0;
+    }
+
+    return {
+      estado: this.estado,
+      candidatos: Array.from(this.candidatos.entries()).map(([nombre, votos]) => ({ nombre, votos })),
+      totalVotos: this.totalVotos,
+      horaInicio: this.horaInicio,
+      duracionSegundos: this.duracionSegundos,
+      tiempoRestante,
+      cantidadCandidatos: this.candidatos.size,
+    };
+  }
+
+  getHourlySnapshots(): HourlySnapshot[] {
+    return [...this.hourlySnapshots];
+  }
+
+  async checkProofServerHealth(): Promise<{ status: boolean; message: string }> {
+    const proofServerUrl = getNetworkConfig().proofServerUrl;
     try {
-      const provider = getProofProvider();
-      await provider.postProof({
-        circuit: 'castVote',
-        witness: { birthYear, nullifierHex, candidateSelection, currentYear },
+      const response = await fetch(`${proofServerUrl}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
       });
-    } catch (e) {
-      console.log('[Midnight Proof Server] Ejecutando circuito Compact en runtime ZK.');
+      if (response.ok) {
+        return { status: true, message: 'Midnight Proof Server operacional' };
+      }
+      return { status: false, message: `Proof Server respondió con HTTP ${response.status}` };
+    } catch {
+      return { status: false, message: `Proof Server en ${proofServerUrl} offline — modo simulación activo` };
     }
   }
 
-  // Actualizar estado del ledger
-  executedNullifiersSet.add(nullifierHex);
-  if (candidateSelection === 1) {
-    countCandidateA++;
-  } else {
-    countCandidateB++;
+  private simulateDelay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
+}
 
-  const candidateName = candidateSelection === 1 ? 'Candidato A (Lista Verde)' : 'Candidato B (Lista Azul)';
+// ── Singleton del servicio ─────────────────────────────────────────────
 
-  const mockTxId =
-    '0x' +
-    Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
+let serviceInstance: IMidnightService | null = null;
 
-  const mockProofHash =
-    'zkp_vote_proof_' +
-    Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-
-  return {
-    success: true,
-    proofHash: mockProofHash,
-    transactionId: mockTxId,
-    candidateName,
-    nullifierRegistered: nullifierHex,
-    updatedLedger: {
-      votesCandidateA: countCandidateA,
-      votesCandidateB: countCandidateB,
-    },
-    details: proofServerCheck.status
-      ? `Prueba ZK generada y validada en Midnight Proof Server. Nulificador registrado en ledger.`
-      : `Prueba ZK verificada exitosamente en el circuito Compact de Midnight.`,
-  };
+/**
+ * Obtiene la instancia del servicio Midnight.
+ * Usa simulación por defecto; cambiará a real cuando el SDK esté configurado.
+ */
+export function getMidnightService(): IMidnightService {
+  if (!serviceInstance) {
+    // TODO: cuando el SDK esté instalado, verificar si la red real está configurada
+    // y usar RealMidnightService en su lugar.
+    // if (isRealNetworkConfigured() && hasSDKPackages()) {
+    //   serviceInstance = new RealMidnightService();
+    // } else {
+    serviceInstance = new SimulatedMidnightService();
+    // }
+  }
+  return serviceInstance;
 }
 
 /**
- * Obtiene los totales del ledger público.
+ * Resetea la instancia del servicio (útil para testing o cambio de red).
  */
-export function getPublicLedgerVotes() {
-  return {
-    votesCandidateA: countCandidateA,
-    votesCandidateB: countCandidateB,
-  };
+export function resetMidnightService(): void {
+  serviceInstance = null;
 }

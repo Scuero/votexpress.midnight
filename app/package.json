@@ -6,12 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "build:compact": "compactc contract/dni_verifier.compact --out src/managed/dni_verifier || echo 'Compact bindings prepared'"
+    "build:compact": "compact compile contract/votacion.compact --out src/managed/votacion && compact compile contract/registro_dni.compact --out src/managed/registro_dni || echo 'Compact bindings prepared'"
   },
   "dependencies": {
     "next": "14.2.5",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "@midnight-ntwrk/midnight-js-contracts": "latest",
+    "@midnight-ntwrk/midnight-js-network-id": "latest",
+    "@midnight-ntwrk/midnight-js-level-private-state-provider": "latest",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "latest",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "latest",
+    "@midnight-ntwrk/compact-runtime": "latest"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",
