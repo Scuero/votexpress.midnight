@@ -35,13 +35,13 @@ export ledger hora_inicio: Uint<254>;
 export ledger duracion_segundos: Uint<254>;
 
 // Contador global de votos emitidos
-export ledger total_votos: Counter;
+export ledger total_votos: Uint<254>;
 
 // Registro de candidatos válidos
 export ledger candidatos_registrados: Map<Opaque<"string">, Boolean>;
 
 // Cantidad de candidatos registrados
-export ledger cantidad_candidatos: Counter;
+export ledger cantidad_candidatos: Uint<254>;
 
 // ── Circuitos de Administración ────────────────────────────────────────
 
@@ -62,7 +62,7 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
     // Registrar candidato e inicializar su conteo en 0
     candidatos_registrados.insert(nombre, true);
     conteo_votos.insert(nombre, 0);
-    cantidad_candidatos.increment(1);
+    cantidad_candidatos = cantidad_candidatos + 1;
 }
 
 /**
@@ -76,7 +76,7 @@ export circuit iniciarVotacion(timestamp_inicio: Uint<254>, duracion: Uint<254>)
         "La votación ya fue iniciada o finalizada";
 
     // Debe haber al menos 2 candidatos registrados
-    assert cantidad_candidatos.value() >= 2
+    assert cantidad_candidatos >= 2
         "Se necesitan al menos 2 candidatos registrados para iniciar la votación";
 
     // Establecer parámetros temporales
@@ -145,5 +145,5 @@ export circuit emitirVoto(
     conteo_votos.insert(candidato, votos_actuales + 1);
 
     // 7. Incrementar contador global
-    total_votos.increment(1);
+    total_votos = total_votos + 1;
 }
