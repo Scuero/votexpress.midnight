@@ -5,3 +5,8 @@ dist/
 !.env.example
 contract/src/managed/
 .DS_Store
+
+# Local Midnight runtime data
+logs/
+midnight-level-db/
+private/
