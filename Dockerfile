@@ -42,8 +42,8 @@ COPY app/src ./src
 COPY app/public ./public
 
 # Compilar los contratos Compact reales ZK (generará los bindings de typescript en src/managed)
-RUN compact compile ../contract/votacion.compact --out src/managed/votacion && \
-    compact compile ../contract/registro_dni.compact --out src/managed/registro_dni
+RUN compact compile ../contract/votacion.compact src/managed/votacion && \
+    compact compile ../contract/registro_dni.compact src/managed/registro_dni
 
 # Compilar la aplicación Next.js standalone
 RUN npm run build
