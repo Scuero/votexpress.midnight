@@ -192,7 +192,7 @@ class RealMidnightServerService implements IMidnightService {
 
     return {
       success: true,
-      transactionId: tx.public?.txId || tx.txHash || 'unknown',
+      transactionId: tx.public?.txId || 'unknown',
       proofHash: tx.public?.blockHeight?.toString() || '',
       details: `Candidato "${nombre}" registrado exitosamente en Midnight.`,
     };
@@ -220,7 +220,7 @@ class RealMidnightServerService implements IMidnightService {
 
     return {
       success: true,
-      transactionId: tx.public?.txId || tx.txHash || 'unknown',
+      transactionId: tx.public?.txId || 'unknown',
       proofHash: tx.public?.blockHeight?.toString() || '',
       details: 'Votación iniciada oficialmente en la blockchain de Midnight.',
     };
@@ -245,7 +245,7 @@ class RealMidnightServerService implements IMidnightService {
 
     return {
       success: true,
-      transactionId: tx.public?.txId || tx.txHash || 'unknown',
+      transactionId: tx.public?.txId || 'unknown',
       proofHash: tx.public?.blockHeight?.toString() || '',
       details: 'Votación finalizada y recuento cerrado en la blockchain.',
     };
@@ -273,7 +273,7 @@ class RealMidnightServerService implements IMidnightService {
 
     return {
       success: true,
-      transactionId: tx.public?.txId || tx.txHash || 'unknown',
+      transactionId: tx.public?.txId || 'unknown',
       proofHash: tx.public?.blockHeight?.toString() || '',
       details: 'Voto emitido exitosamente con prueba ZK en Midnight.',
       candidatoNombre: candidato,
@@ -314,7 +314,7 @@ class RealMidnightServerService implements IMidnightService {
 
     return {
       success: true,
-      transactionId: tx.public?.txId || tx.txHash || 'unknown',
+      transactionId: tx.public?.txId || 'unknown',
       proofHash: tx.public?.blockHeight?.toString() || '',
       details: 'DNI registrado de forma privada en la red Midnight.',
     };
