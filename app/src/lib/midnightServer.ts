@@ -152,8 +152,8 @@ class RealMidnightServerService implements IMidnightService {
     // del Wallet SDK conectado a la extensión Lace del admin.
     const walletProvider = {
       balanceTx: async (tx: any) => tx,
-      getCoinPublicKey: async () => '0x0000000000000000000000000000000000000000000000000000000000000000',
-      getEncryptionPublicKey: async () => '0x0000000000000000000000000000000000000000000000000000000000000000',
+      getCoinPublicKey: () => '0000000000000000000000000000000000000000000000000000000000000000',
+      getEncryptionPublicKey: () => '0000000000000000000000000000000000000000000000000000000000000000',
     };
     const midnightProvider = {
       submitTx: async (tx: any) => '0x0000',
