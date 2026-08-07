@@ -124,6 +124,23 @@ export default function ExpressVotingPage() {
           </p>
         </div>
 
+        {ledgerState && (ledgerState.estado === 'ABIERTA' || ledgerState.estado === 'FINALIZADA') && (
+          <div style={{ textAlign: 'center', marginTop: -8, display: 'flex', justifyContent: 'center' }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border-subtle)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              🗳️ Contrato Activo: 
+              <span 
+                style={{ color: '#a78bfa', fontFamily: 'monospace', cursor: 'pointer', fontWeight: 600 }}
+                onClick={() => {
+                  navigator.clipboard.writeText(getCachedConfig().votingContractAddress);
+                }}
+                title="Hacé clic para copiar dirección de contrato de votación"
+              >
+                {getCachedConfig().votingContractAddress ? `${getCachedConfig().votingContractAddress.slice(0, 12)}...${getCachedConfig().votingContractAddress.slice(-10)}` : 'No configurado'} 📋
+              </span>
+            </span>
+          </div>
+        )}
+
         {/* Collapsible Settings Form */}
         {showSettings && (
           <div className="glass-card" style={{ padding: 20, border: '1px solid rgba(139, 92, 246, 0.2)' }}>
