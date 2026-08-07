@@ -17,7 +17,10 @@
     "@midnight-ntwrk/midnight-js-level-private-state-provider": "latest",
     "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "latest",
     "@midnight-ntwrk/midnight-js-http-client-proof-provider": "latest",
-    "@midnight-ntwrk/compact-runtime": "latest"
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "latest",
+    "@midnight-ntwrk/midnight-js-types": "latest",
+    "@midnight-ntwrk/compact-runtime": "latest",
+    "@midnight-ntwrk/dapp-connector-api": "latest"
   },
   "devDependencies": {
     "@types/node": "^20.14.12",
