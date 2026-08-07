@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     bash \
     ca-certificates \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Descargar e instalar el compilador Compact oficial
