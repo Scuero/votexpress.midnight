@@ -11,16 +11,16 @@ pragma language_version >= 0.15.0;
 // Estructura interna para procesar los datos del DNI dentro del circuito ZK.
 // Todos estos campos son privados por defecto (witness) — no se publican.
 export struct DatosDNI {
-    numero_dni: Uint<256>;
+    numero_dni: Uint<254>;
     apellido_nombres: Opaque<"string">;
     sexo: Opaque<"string">;
     fecha_nacimiento: Opaque<"string">;
-    numero_tramite: Uint<256>;
+    numero_tramite: Uint<254>;
 }
 
 // Ledger público: mapeo de Hash(DNI) → booleano
 // Permite verificar si un DNI ya fue registrado sin revelar cuál es.
-export ledger dni_registrados: Map<Uint<256>, Boolean>;
+export ledger dni_registrados: Map<Uint<254>, Boolean>;
 
 // Contador público de DNIs registrados
 export ledger total_registrados: Counter;
@@ -37,7 +37,7 @@ export ledger total_registrados: Counter;
  * @param datos Datos completos del DNI (privados, nunca se publican)
  * @param hash_unico Hash SHA-256 derivado del DNI (se publica como commitment)
  */
-export circuit registrarDNI(datos: DatosDNI, hash_unico: Uint<256>): [] {
+export circuit registrarDNI(datos: DatosDNI, hash_unico: Uint<254>): [] {
     // 1. Verificar que este DNI (vía hash) no haya sido registrado antes
     assert !dni_registrados.member(hash_unico)
         "Este DNI ya fue registrado previamente en la red Midnight";

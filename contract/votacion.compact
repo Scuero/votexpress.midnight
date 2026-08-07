@@ -20,19 +20,19 @@ export enum EstadoVotacion {
 // ── Ledger público (on-chain) ──────────────────────────────────────────
 
 // Conteo acumulado de votos por candidato (clave = nombre candidato)
-export ledger conteo_votos: Map<Opaque<"string">, Uint<256>>;
+export ledger conteo_votos: Map<Opaque<"string">, Uint<254>>;
 
 // Estado actual de la votación
 export ledger estado_actual: EstadoVotacion;
 
 // Registro de nullifiers usados (anti-doble voto)
-export ledger votos_emitidos: Map<Uint<256>, Boolean>;
+export ledger votos_emitidos: Map<Uint<254>, Boolean>;
 
 // Timestamp Unix (segundos) de inicio de la votación
-export ledger hora_inicio: Uint<256>;
+export ledger hora_inicio: Uint<254>;
 
 // Duración del evento en segundos (86400 = 24 horas)
-export ledger duracion_segundos: Uint<256>;
+export ledger duracion_segundos: Uint<254>;
 
 // Contador global de votos emitidos
 export ledger total_votos: Counter;
@@ -70,7 +70,7 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
  * @param timestamp_inicio Timestamp Unix (segundos) del momento de apertura
  * @param duracion Duración del evento en segundos (ej: 86400 para 24 horas)
  */
-export circuit iniciarVotacion(timestamp_inicio: Uint<256>, duracion: Uint<256>): [] {
+export circuit iniciarVotacion(timestamp_inicio: Uint<254>, duracion: Uint<254>): [] {
     // Solo se puede abrir si está cerrada
     assert estado_actual == EstadoVotacion.CERRADA
         "La votación ya fue iniciada o finalizada";
@@ -91,7 +91,7 @@ export circuit iniciarVotacion(timestamp_inicio: Uint<256>, duracion: Uint<256>)
  * Finaliza la votación una vez que el tiempo haya expirado.
  * @param timestamp_actual Timestamp Unix (segundos) del momento actual
  */
-export circuit finalizarVotacion(timestamp_actual: Uint<256>): [] {
+export circuit finalizarVotacion(timestamp_actual: Uint<254>): [] {
     // Solo se puede finalizar si está abierta
     assert estado_actual == EstadoVotacion.ABIERTA
         "La votación no está abierta";
@@ -116,8 +116,8 @@ export circuit finalizarVotacion(timestamp_actual: Uint<256>): [] {
  */
 export circuit emitirVoto(
     candidato: Opaque<"string">,
-    nullifier: Uint<256>,
-    timestamp_actual: Uint<256>
+    nullifier: Uint<254>,
+    timestamp_actual: Uint<254>
 ): [] {
     // 1. La votación debe estar abierta
     assert estado_actual == EstadoVotacion.ABIERTA
