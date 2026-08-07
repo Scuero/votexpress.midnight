@@ -49,5 +49,5 @@ export circuit registrarDNI(datos: DatosDNI, hash_unico: Uint<254>): [] {
     dni_registrados.insert(hash_unico, true);
 
     // 3. Incrementar contador público
-    total_registrados = (total_registrados as Field + 1) as Uint<254>;
+    total_registrados = (total_registrados + (1 as Field)) as Uint<254>;
 }

@@ -64,7 +64,7 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
     // Registrar candidato e inicializar su conteo en 0
     candidatos_registrados.insert(nombre, true);
     conteo_votos.insert(nombre, 0);
-    cantidad_candidatos = (cantidad_candidatos as Field + 1) as Uint<254>;
+    cantidad_candidatos = (cantidad_candidatos + (1 as Field)) as Uint<254>;
 }
 
 /**
@@ -99,7 +99,7 @@ export circuit finalizarVotacion(timestamp_actual: Uint<254>): [] {
         "La votación no está abierta";
 
     // Verificar que el tiempo haya expirado
-    assert disclose(timestamp_actual) >= (hora_inicio as Field + duracion_segundos) as Uint<254>
+    assert disclose(timestamp_actual) >= (hora_inicio + (duracion_segundos as Field)) as Uint<254>
         "El tiempo de votación no ha expirado aún";
 
     // Cambiar estado a finalizada
@@ -126,7 +126,7 @@ export circuit emitirVoto(
         "La votación no está abierta";
 
     // 2. Verificar que el tiempo no haya expirado
-    assert disclose(timestamp_actual) < (hora_inicio as Field + duracion_segundos) as Uint<254>
+    assert disclose(timestamp_actual) < (hora_inicio + (duracion_segundos as Field)) as Uint<254>
         "El tiempo de votación ha expirado";
 
     // 3. Verificar que el candidato esté registrado
@@ -144,8 +144,8 @@ export circuit emitirVoto(
     const votos_actuales = conteo_votos.member(candidato)
         ? conteo_votos.lookup(candidato).value
         : 0;
-    conteo_votos.insert(candidato, (votos_actuales as Field + 1) as Uint<254>);
+    conteo_votos.insert(candidato, (votos_actuales + (1 as Field)) as Uint<254>);
 
     // 7. Incrementar contador global
-    total_votos = (total_votos as Field + 1) as Uint<254>;
+    total_votos = (total_votos + (1 as Field)) as Uint<254>;
 }
