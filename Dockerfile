@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
 
 # Configurar el PATH para incluir las herramientas de Compact
-ENV PATH="/root/.compact/bin:${PATH}"
+ENV PATH="/root/.local/bin:${PATH}"
 
 # Descargar la versión del compilador compatible
 RUN compact update 0.23.0
