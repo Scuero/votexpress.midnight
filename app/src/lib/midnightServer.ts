@@ -99,6 +99,22 @@ function hexToBytes32(hex: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Itera de forma segura sobre un campo `Map<K,V>` del ledger.
+ * El compact-runtime expone estos campos como un Map-like real
+ * (con .entries()/.forEach()), no como un objeto plano de JS,
+ * así que Object.entries() no sirve aquí.
+ */
+function mapEntries<K, V>(m: unknown): Iterable<[K, V]> {
+  if (m && typeof (m as any).entries === 'function') {
+    return (m as Map<K, V>).entries();
+  }
+  if (m && typeof m === 'object') {
+    return Object.entries(m as object) as unknown as Iterable<[K, V]>;
+  }
+  return [];
+}
+
 // ── Implementación Blockchain Real ─────────────────────────────────────
 
 class RealMidnightServerService implements IMidnightService {
@@ -335,19 +351,36 @@ class RealMidnightServerService implements IMidnightService {
     }
 
     const providers = await this.getProviders();
-    const deployed = await findDeployedContract(providers, {
-      contractAddress: config.votingContractAddress,
-      compiledContract: votacionContract.contractSpecification,
-      privateStateId: 'votacion-private-state',
-      initialPrivateState: {},
-    });
 
-    const ledger = deployed.state.ledger;
+    // El ledger NO se lee a través del FoundContract (no expone `.state`).
+    // Se consulta directamente al publicDataProvider (indexer) y se parsea
+    // con la función estática `ledger()` que exporta el módulo compilado.
+    // Ver: https://docs.midnight.network/tutorials/counter/counter-cli
+    //      https://docs.midnight.network/tutorials/bboard/bboard-api-implementation
+    const contractState = await providers.publicDataProvider.queryContractState(
+      config.votingContractAddress
+    );
+
+    if (!contractState) {
+      // El contrato aún no tiene estado indexado on-chain (recién desplegado
+      // o el indexer todavía no lo procesó).
+      return {
+        estado: 'CERRADA',
+        candidatos: [],
+        totalVotos: 0,
+        horaInicio: null,
+        duracionSegundos: getDefaultVotingDuration(),
+        tiempoRestante: -1,
+        cantidadCandidatos: 0,
+      };
+    }
+
+    const ledger = votacionContract.ledger(contractState.data);
 
     // Convertir estado del enum del contrato (0 = CERRADA, 1 = ABIERTA, 2 = FINALIZADA)
     let estado: EstadoVotacion = 'CERRADA';
-    if (ledger.estado_actual === 1) estado = 'ABIERTA';
-    if (ledger.estado_actual === 2) estado = 'FINALIZADA';
+    if (Number(ledger.estado_actual) === 1) estado = 'ABIERTA';
+    if (Number(ledger.estado_actual) === 2) estado = 'FINALIZADA';
 
     const now = Math.floor(Date.now() / 1000);
     const horaInicio = ledger.hora_inicio ? Number(ledger.hora_inicio) : null;
@@ -360,9 +393,12 @@ class RealMidnightServerService implements IMidnightService {
       tiempoRestante = 0;
     }
 
+    // El campo `conteo_votos` del ledger es un Map<K,V> del compact-runtime
+    // (no un objeto plano de JS), así que iteramos con su propio forEach/entries
+    // en vez de Object.entries(), que devolvería un array vacío silenciosamente.
     const candidatos: CandidatoInfo[] = [];
     if (ledger.conteo_votos) {
-      for (const [nombre, votos] of Object.entries(ledger.conteo_votos)) {
+      for (const [nombre, votos] of mapEntries<string, number | bigint>(ledger.conteo_votos)) {
         candidatos.push({
           nombre: String(nombre),
           votos: Number(votos),
