@@ -52,11 +52,11 @@ export ledger cantidad_candidatos: Counter;
  */
 export circuit registrarCandidato(nombre: Opaque<"string">): [] {
     // Solo se pueden agregar candidatos antes de abrir la votación
-    assert(estado_actual == EstadoVotacion.CERRADA,
+    assert(estado_actual == EstadoVotacion.CERRADA
         "No se pueden agregar candidatos con la votación activa o finalizada");
 
     // Verificar que el candidato no exista ya
-    assert(!candidatos_registrados.member(nombre),
+    assert(!candidatos_registrados.member(nombre)
         "Este candidato ya está registrado");
 
     // Registrar candidato e inicializar su conteo en 0
@@ -72,11 +72,11 @@ export circuit registrarCandidato(nombre: Opaque<"string">): [] {
  */
 export circuit iniciarVotacion(timestamp_inicio: Uint256, duracion: Uint256): [] {
     // Solo se puede abrir si está cerrada
-    assert(estado_actual == EstadoVotacion.CERRADA,
+    assert(estado_actual == EstadoVotacion.CERRADA
         "La votación ya fue iniciada o finalizada");
 
     // Debe haber al menos 2 candidatos registrados
-    assert(cantidad_candidatos.value() >= 2,
+    assert(cantidad_candidatos.value() >= 2
         "Se necesitan al menos 2 candidatos registrados para iniciar la votación");
 
     // Establecer parámetros temporales
@@ -93,11 +93,11 @@ export circuit iniciarVotacion(timestamp_inicio: Uint256, duracion: Uint256): []
  */
 export circuit finalizarVotacion(timestamp_actual: Uint256): [] {
     // Solo se puede finalizar si está abierta
-    assert(estado_actual == EstadoVotacion.ABIERTA,
+    assert(estado_actual == EstadoVotacion.ABIERTA
         "La votación no está abierta");
 
     // Verificar que el tiempo haya expirado
-    assert(disclose(timestamp_actual) >= hora_inicio + duracion_segundos,
+    assert(disclose(timestamp_actual) >= hora_inicio + duracion_segundos
         "El tiempo de votación no ha expirado aún");
 
     // Cambiar estado a finalizada
@@ -120,19 +120,19 @@ export circuit emitirVoto(
     timestamp_actual: Uint256
 ): [] {
     // 1. La votación debe estar abierta
-    assert(estado_actual == EstadoVotacion.ABIERTA,
+    assert(estado_actual == EstadoVotacion.ABIERTA
         "La votación no está abierta");
 
     // 2. Verificar que el tiempo no haya expirado
-    assert(disclose(timestamp_actual) < hora_inicio + duracion_segundos,
+    assert(disclose(timestamp_actual) < hora_inicio + duracion_segundos
         "El tiempo de votación ha expirado");
 
     // 3. Verificar que el candidato esté registrado
-    assert(candidatos_registrados.member(candidato),
+    assert(candidatos_registrados.member(candidato)
         "Candidato no registrado en esta votación");
 
     // 4. Anti-doble voto: verificar que el nullifier no se haya usado
-    assert(!votos_emitidos.member(nullifier),
+    assert(!votos_emitidos.member(nullifier)
         "Este DNI ya ha emitido su voto en esta votación");
 
     // 5. Registrar nullifier para invalidar futuros intentos
