@@ -143,18 +143,20 @@ class RealMidnightServerService implements IMidnightService {
     );
 
     // walletProvider y midnightProvider se obtienen del DApp Connector (Lace).
-    // En el lado del servidor, estos se inyectan desde la API route cuando
-    // el admin conecta su wallet. Por ahora se dejan como stubs que serán
-    // reemplazados con la integración completa del Wallet SDK.
+    // En el lado del servidor, estos son stubs que implementan la interfaz
+    // WalletProvider y MidnightProvider del SDK según los tipos reales:
+    //   WalletProvider: { balanceTx, getCoinPublicKey, getEncryptionPublicKey }
+    //   MidnightProvider: { submitTx }
     //
-    // Nota: La documentación oficial indica que estos vienen del Wallet SDK:
-    //   walletProvider → maneja balanceTransaction
-    //   midnightProvider → maneja submitTransaction
+    // En producción real, estos se reemplazan con los providers derivados
+    // del Wallet SDK conectado a la extensión Lace del admin.
     const walletProvider = {
-      balanceTransaction: async (tx: unknown) => tx,
+      balanceTx: async (tx: any) => tx,
+      getCoinPublicKey: async () => '0x0000000000000000000000000000000000000000000000000000000000000000',
+      getEncryptionPublicKey: async () => '0x0000000000000000000000000000000000000000000000000000000000000000',
     };
     const midnightProvider = {
-      submitTransaction: async (tx: unknown) => ({ txId: 'pending' }),
+      submitTx: async (tx: any) => '0x0000',
     };
 
     return {
