@@ -1,5 +1,7 @@
 pragma language_version >= 0.15.0;
 
+import CompactStandardLibrary;
+
 /**
  * Contrato de Registro de Identidad Privada — Midnight Network
  *
