@@ -142,7 +142,7 @@ export circuit emitirVoto(
 
     // 6. Incrementar el conteo del candidato elegido
     const votos_actuales = conteo_votos.member(candidato)
-        ? conteo_votos.lookup(candidato).value
+        ? conteo_votos.lookup(candidato)
         : 0;
     conteo_votos.insert(candidato, (votos_actuales + (1 as Field)) as Uint<254>);
 
