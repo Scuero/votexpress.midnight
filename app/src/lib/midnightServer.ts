@@ -125,6 +125,7 @@ class RealMidnightServerService implements IMidnightService {
   private hourlySnapshots: HourlySnapshot[] = [];
   private sessionCandidatos: string[] = [];
   private sessionEstado: EstadoVotacion = 'CERRADA';
+  private sessionConteoVotos: Map<string, number> = new Map();
 
   /**
    * Construye el objeto MidnightProviders completo según la documentación oficial.
@@ -337,6 +338,10 @@ class RealMidnightServerService implements IMidnightService {
       throw new Error('Contrato de votación no configurado.');
     }
 
+    // Incrementar conteo de votos en sesión para el candidato seleccionado
+    const currentVotes = this.sessionConteoVotos.get(candidato) || 0;
+    this.sessionConteoVotos.set(candidato, currentVotes + 1);
+
     try {
       const tx = await withTimeout(
         (async () => {
@@ -427,10 +432,16 @@ class RealMidnightServerService implements IMidnightService {
 
   async getLedgerState(): Promise<LedgerState> {
     const config = getCachedConfig();
+    const candidatosDefault: CandidatoInfo[] = this.sessionCandidatos.map(nombre => ({
+      nombre,
+      votos: this.sessionConteoVotos.get(nombre) || 0,
+    }));
+    const totalVotosDefault = candidatosDefault.reduce((sum, c) => sum + c.votos, 0);
+
     const defaultState: LedgerState = {
       estado: this.sessionEstado,
-      candidatos: this.sessionCandidatos.map(nombre => ({ nombre, votos: 0 })),
-      totalVotos: 0,
+      candidatos: candidatosDefault,
+      totalVotos: totalVotosDefault,
       horaInicio: this.sessionEstado === 'ABIERTA' ? Math.floor(Date.now() / 1000) : null,
       duracionSegundos: getDefaultVotingDuration(),
       tiempoRestante: this.sessionEstado === 'ABIERTA' ? getDefaultVotingDuration() : -1,
@@ -469,11 +480,12 @@ class RealMidnightServerService implements IMidnightService {
       }
 
       const candidatosMap = new Map<string, number>();
-      this.sessionCandidatos.forEach(c => candidatosMap.set(c, 0));
+      this.sessionCandidatos.forEach(c => candidatosMap.set(c, this.sessionConteoVotos.get(c) || 0));
 
       if (ledger.conteo_votos) {
         for (const [nombre, votos] of mapEntries<string, number | bigint>(ledger.conteo_votos)) {
-          candidatosMap.set(String(nombre), Number(votos));
+          const localVal = candidatosMap.get(String(nombre)) || 0;
+          candidatosMap.set(String(nombre), Math.max(localVal, Number(votos)));
         }
       }
 
@@ -482,12 +494,12 @@ class RealMidnightServerService implements IMidnightService {
         votos,
       }));
 
-      const totalVotos = candidatos.reduce((sum, c) => sum + c.votos, 0) || Number(ledger.total_votos || 0);
+      const totalVotos = candidatos.reduce((sum, c) => sum + c.votos, 0);
 
       return {
         estado,
         candidatos,
-        totalVotos: Number(ledger.total_votos),
+        totalVotos,
         horaInicio,
         duracionSegundos,
         tiempoRestante,
