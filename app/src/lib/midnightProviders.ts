@@ -202,8 +202,8 @@ export function getDniContractAddress(): string | null {
 export function getExplorerContractUrl(contractAddress: string): string {
   const config = getCachedConfig();
   const addr = contractAddress ? contractAddress.trim().replace(/^0x/i, '') : '';
-  const net = config.network === 'testnet' ? 'testnet' : (config.network === 'preview' ? 'preview' : 'preview');
-  return `https://explorer.${net}.midnight.network/contract/${addr}`;
+  const domain = config.network === 'testnet' ? 'testnet.midnightexplorer.com' : 'preview.midnightexplorer.com';
+  return `https://${domain}/address/${addr}`;
 }
 
 /**
