@@ -107,7 +107,11 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
   }
 
   const config = getCachedConfig();
-  const netId = config.network === 'local' ? 'undeployed' : (config.network === 'testnet' ? 'testnet' : 'mainnet');
+  const netId = config.network === 'local' 
+    ? 'undeployed' 
+    : (config.network === 'testnet' 
+       ? 'testnet' 
+       : (config.network === 'preview' ? 'preview' : 'mainnet'));
 
   try {
     let walletApi: any;
@@ -188,6 +192,7 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
     let networkLabel = 'unknown';
     const config = getCachedConfig();
     if (config.network === 'testnet') networkLabel = 'Preprod';
+    else if (config.network === 'preview') networkLabel = 'Preview';
     else if (config.network === 'mainnet') networkLabel = 'Mainnet';
     else if (config.network === 'local') networkLabel = 'Local';
 

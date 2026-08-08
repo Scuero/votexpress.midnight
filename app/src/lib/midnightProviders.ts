@@ -7,7 +7,7 @@
  * - "mainnet" → Producción con Blockfrost + proof server local
  */
 
-export type MidnightNetwork = 'local' | 'testnet' | 'mainnet';
+export type MidnightNetwork = 'local' | 'testnet' | 'preview' | 'mainnet';
 
 export interface NetworkConfig {
   network: MidnightNetwork;
@@ -29,6 +29,12 @@ const NETWORK_CONFIGS: Record<MidnightNetwork, Omit<NetworkConfig, 'network' | '
     indexerUrl: 'https://midnight-preprod.blockfrost.io/api/v0',
     indexerWsUrl: 'wss://midnight-preprod.blockfrost.io/api/v0/ws',
     nodeUrl: 'https://rpc.midnight-preprod.blockfrost.io',
+    proofServerUrl: 'http://localhost:6300',
+  },
+  preview: {
+    indexerUrl: 'https://midnight-preview.blockfrost.io/api/v0',
+    indexerWsUrl: 'wss://midnight-preview.blockfrost.io/api/v0/ws',
+    nodeUrl: 'https://rpc.midnight-preview.blockfrost.io',
     proofServerUrl: 'http://localhost:6300',
   },
   mainnet: {
@@ -183,6 +189,7 @@ export function getNetworkDisplayName(): string {
   const names: Record<MidnightNetwork, string> = {
     local: 'Local (Docker)',
     testnet: 'Testnet Preprod',
+    preview: 'Testnet Preview',
     mainnet: 'Mainnet',
   };
   return names[getNetworkConfig().network];

@@ -118,6 +118,7 @@ export default function AdminPage() {
                 >
                   <option value="local">Local (Docker devnet)</option>
                   <option value="testnet">Testnet Preprod</option>
+                  <option value="preview">Testnet Preview</option>
                   <option value="mainnet">Mainnet</option>
                 </select>
               </div>
