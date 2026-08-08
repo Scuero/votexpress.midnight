@@ -2,6 +2,17 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
+try {
+  const networkIdModule = require('@midnight-ntwrk/midnight-js-network-id');
+  const setNetworkId = networkIdModule.setNetworkId;
+  const NetworkId = networkIdModule.NetworkId;
+  if (typeof setNetworkId === 'function') {
+    try { setNetworkId(NetworkId?.Undeployed || 'Undeployed'); } catch {
+      try { setNetworkId(NetworkId?.TestNet || 'TestNet'); } catch {}
+    }
+  }
+} catch {}
+
 /**
  * Script CLI de despliegue y compilación de contratos para VotExpress Midnight
  *
@@ -65,21 +76,43 @@ async function main() {
     const { levelPrivateStateProvider } = require('@midnight-ntwrk/midnight-js-level-private-state-provider');
     const { indexerPublicDataProvider } = require('@midnight-ntwrk/midnight-js-indexer-public-data-provider');
     const { httpClientProofProvider } = require('@midnight-ntwrk/midnight-js-http-client-proof-provider');
+    const { setNetworkId, NetworkId } = require('@midnight-ntwrk/midnight-js-network-id');
+    
+    try {
+      setNetworkId(NetworkId.Undeployed);
+    } catch {
+      try { setNetworkId(NetworkId.TestNet || 'Undeployed'); } catch {}
+    }
     
     // Configuración de red (Preview Testnet)
     const indexerUrl = process.env.MIDNIGHT_INDEXER_URL || 'https://indexer.preview.midnight.network/api/v4/graphql';
     const indexerWsUrl = process.env.MIDNIGHT_INDEXER_WS_URL || 'wss://indexer.preview.midnight.network/api/v4/graphql/ws';
     const proofServerUrl = process.env.MIDNIGHT_PROOF_SERVER_URL || 'http://localhost:6300';
 
+    const walletProvider = {
+      balanceTx: async (tx: any) => tx,
+      getCoinPublicKey: () => '0000000000000000000000000000000000000000000000000000000000000000',
+      getEncryptionPublicKey: () => '0000000000000000000000000000000000000000000000000000000000000000',
+    };
+    const midnightProvider = {
+      submitTx: async (tx: any) => '0x0000',
+    };
+
     const providers = {
-      privateStateProvider: levelPrivateStateProvider({ dbPath: './deploy-private-state' }),
+      privateStateProvider: levelPrivateStateProvider({
+        dbPath: './deploy-private-state',
+        privateStoragePasswordProvider: () => process.env.MIDNIGHT_PRIVATE_STATE_PASSWORD || 'votexpress-secure-admin-password-2026',
+        accountId: process.env.MIDNIGHT_ADMIN_ACCOUNT_ID || 'votexpress-deployer-account',
+      }),
       publicDataProvider: indexerPublicDataProvider(indexerUrl, indexerWsUrl),
       proofProvider: httpClientProofProvider(proofServerUrl),
+      walletProvider,
+      midnightProvider,
     };
 
     // Cargar contratos especificados
-    const votacionSpec = require('../app/src/managed/votacion/contract').contractSpecification;
-    const registroDniSpec = require('../app/src/managed/registro_dni/contract').contractSpecification;
+    const votacionSpec = require('../managed/votacion/contract').contractSpecification;
+    const registroDniSpec = require('../managed/registro_dni/contract').contractSpecification;
 
     console.log('⚡ Desplegando Contrato de Registro DNI...');
     const dniDeployed = await deployContract(providers, {
@@ -101,9 +134,10 @@ async function main() {
 
     // 3. Escribir/Actualizar archivo .env.local
     console.log('\n📝 3. Actualizando variables en app/.env.local...');
+    const targetEnvPath = path.resolve(process.cwd(), '.env.local');
     let envContent = '';
-    if (fs.existsSync(envPath)) {
-      envContent = fs.readFileSync(envPath, 'utf8');
+    if (fs.existsSync(targetEnvPath)) {
+      envContent = fs.readFileSync(targetEnvPath, 'utf8');
     }
 
     const updateEnvVar = (content: string, key: string, value: string): string => {
@@ -118,7 +152,7 @@ async function main() {
     updatedEnv = updateEnvVar(updatedEnv, 'NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS', votingAddr);
     updatedEnv = updateEnvVar(updatedEnv, 'NEXT_PUBLIC_DNI_CONTRACT_ADDRESS', dniAddr);
 
-    fs.writeFileSync(envPath, updatedEnv.trim() + '\n', 'utf8');
+    fs.writeFileSync(targetEnvPath, updatedEnv.trim() + '\n', 'utf8');
     console.log('✅ Archivo app/.env.local actualizado con las direcciones reales.');
   } catch (err) {
     console.error('❌ Error durante el despliegue on-chain:', err);
