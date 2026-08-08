@@ -11,3 +11,4 @@ dist/
 contract/src/managed/
 app/src/managed/
 .DS_Store
+.antigravity/
