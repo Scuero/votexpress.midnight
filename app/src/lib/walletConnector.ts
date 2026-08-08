@@ -20,6 +20,7 @@ export interface WalletState {
   connected: boolean;
   address: string;
   balanceTDust: string;
+  balanceTNight: string;
   networkLabel: string;
 }
 
@@ -166,13 +167,22 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
     }
 
     let balanceTDust = '0';
-    if (typeof walletApi.getDustBalance === 'function') {
-      const dustBalance = await walletApi.getDustBalance();
-      balanceTDust = dustBalance.toString();
-    } else if (typeof walletApi.getUnshieldedBalances === 'function') {
+    let balanceTNight = '0';
+    if (typeof walletApi.getUnshieldedBalances === 'function') {
       const balances = await walletApi.getUnshieldedBalances();
-      const dustBalance = balances[''] || balances['tDUST'] || balances['dust'] || BigInt(0);
+      let dustBalance = BigInt(0);
+      let nightBalance = BigInt(0);
+      if (balances) {
+        if (typeof (balances as any).get === 'function') {
+          dustBalance = (balances as any).get('') || (balances as any).get('tDUST') || (balances as any).get('dust') || BigInt(0);
+          nightBalance = (balances as any).get('tNIGHT') || (balances as any).get('NIGHT') || (balances as any).get('night') || BigInt(0);
+        } else {
+          dustBalance = (balances as any)[''] || (balances as any)['tDUST'] || (balances as any)['dust'] || BigInt(0);
+          nightBalance = (balances as any)['tNIGHT'] || (balances as any)['NIGHT'] || (balances as any)['night'] || BigInt(0);
+        }
+      }
       balanceTDust = dustBalance.toString();
+      balanceTNight = nightBalance.toString();
     }
 
     let networkLabel = 'unknown';
@@ -185,6 +195,7 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
       connected: true,
       address,
       balanceTDust,
+      balanceTNight,
       networkLabel,
     };
   } catch (error: any) {

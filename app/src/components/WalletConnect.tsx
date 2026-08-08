@@ -83,7 +83,10 @@ export default function WalletConnect({ onWalletConnected, label = 'Conectar Lac
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-purple)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
+              {walletState.balanceTNight} tNIGHT
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-purple)', marginTop: 2 }}>
               {walletState.balanceTDust} tDUST
             </div>
             <button onClick={handleDisconnect} className="btn-disconnect" style={{ background: 'transparent', border: 'none', color: '#f87171', fontSize: 11, cursor: 'pointer', marginTop: 4 }}>
