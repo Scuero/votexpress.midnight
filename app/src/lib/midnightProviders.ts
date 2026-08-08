@@ -197,6 +197,16 @@ export function getDniContractAddress(): string | null {
 }
 
 /**
+ * Retorna la URL del explorador de bloques oficial de Midnight Network para abrir el contrato en una pestaña nueva.
+ */
+export function getExplorerContractUrl(contractAddress: string): string {
+  const config = getCachedConfig();
+  const addr = contractAddress ? contractAddress.trim().replace(/^0x/i, '') : '';
+  const net = config.network === 'testnet' ? 'testnet' : (config.network === 'preview' ? 'preview' : 'preview');
+  return `https://explorer.${net}.midnight.network/contract/${addr}`;
+}
+
+/**
  * Duración por defecto de la votación en segundos.
  */
 export function getDefaultVotingDuration(): number {

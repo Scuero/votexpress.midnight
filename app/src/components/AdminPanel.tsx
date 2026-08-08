@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getMidnightService, LedgerState, TxResult } from '../lib/midnight';
 import { WalletAPI, WalletState, requestLaceGasApproval, isLaceInstalled } from '../lib/walletConnector';
-import { getCachedConfig } from '../lib/midnightProviders';
+import { getCachedConfig, getExplorerContractUrl } from '../lib/midnightProviders';
 import WalletConnect from './WalletConnect';
 
 interface AdminPanelProps {
@@ -224,19 +224,51 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
               </p>
               
               {/* Dirección de Contratos en pantalla */}
-              <div style={{ padding: 12, borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', fontSize: 11, marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ padding: 12, borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', fontSize: 11, marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontWeight: 700, color: 'var(--text-secondary)' }}>Contratos Activos en la Red:</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'monospace' }}>
                   <span style={{ opacity: 0.8 }}>Contrato Votación:</span>
-                  <span style={{ color: '#a78bfa', cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(getCachedConfig().votingContractAddress)} title="Hacé clic para copiar">
-                    {getCachedConfig().votingContractAddress ? `${getCachedConfig().votingContractAddress.slice(0, 10)}...${getCachedConfig().votingContractAddress.slice(-8)}` : 'No configurado'} 📋
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <a
+                      href={getExplorerContractUrl(getCachedConfig().votingContractAddress)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#a78bfa', textDecoration: 'underline', fontWeight: 600 }}
+                      title="Abrir contrato de votación en Midnight Explorer (Nueva pestaña)"
+                    >
+                      {getCachedConfig().votingContractAddress ? `${getCachedConfig().votingContractAddress.slice(0, 8)}...${getCachedConfig().votingContractAddress.slice(-6)}` : 'No configurado'} ↗
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(getCachedConfig().votingContractAddress)}
+                      title="Copiar dirección de contrato"
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      📋
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'monospace' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontFamily: 'monospace' }}>
                   <span style={{ opacity: 0.8 }}>Registro de DNI:</span>
-                  <span style={{ color: '#a78bfa', cursor: 'pointer' }} onClick={() => navigator.clipboard.writeText(getCachedConfig().dniContractAddress)} title="Hacé clic para copiar">
-                    {getCachedConfig().dniContractAddress ? `${getCachedConfig().dniContractAddress.slice(0, 10)}...${getCachedConfig().dniContractAddress.slice(-8)}` : 'No configurado'} 📋
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <a
+                      href={getExplorerContractUrl(getCachedConfig().dniContractAddress)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#a78bfa', textDecoration: 'underline', fontWeight: 600 }}
+                      title="Abrir contrato de registro DNI en Midnight Explorer (Nueva pestaña)"
+                    >
+                      {getCachedConfig().dniContractAddress ? `${getCachedConfig().dniContractAddress.slice(0, 8)}...${getCachedConfig().dniContractAddress.slice(-6)}` : 'No configurado'} ↗
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(getCachedConfig().dniContractAddress)}
+                      title="Copiar dirección de contrato"
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      📋
+                    </button>
+                  </div>
                 </div>
               </div>
 

@@ -345,32 +345,56 @@ export async function requestLaceGasApproval(actionName: string): Promise<string
   const config = getCachedConfig();
   const contractAddr = config.votingContractAddress || 'b62807c1734098303d0e86e47ae1ef04c4481b397d63782ea78a5c2874e7aeef';
 
-  // 1. Probar makeTransfer / transfer
+  // 1. Probar makeTransfer con los formatos oficiales de la especificación DApp Connector API
   const transferFn = walletApi.makeTransfer || walletApi.transfer;
   if (typeof transferFn === 'function') {
     try {
+      // Formato Estándar 1: [{ receiverAddress, amount }]
       const res = await transferFn.call(walletApi, [
         {
-          type: 'unshielded',
-          tokenType: 'tNIGHT',
-          amount: BigInt(1_000_000), // 1 tNIGHT de comisión de gas
           receiverAddress: contractAddr,
+          amount: BigInt(1_000_000), // 1 tNIGHT
         },
       ]);
       const txHash = typeof res === 'string' ? res : (res?.txHash || res?.transactionId || `tx_lace_${Date.now().toString(16)}`);
       return String(txHash);
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      console.warn('⚠️ Intento makeTransfer en Lace Wallet:', msg);
+    } catch (err1: any) {
+      const msg1 = err1?.message || String(err1);
       if (
-        msg.includes('refused') || 
-        msg.includes('reject') || 
-        msg.includes('cancel') || 
-        msg.includes('User') ||
-        msg.includes('Rechazaste') ||
-        msg.includes('declined')
+        msg1.includes('refused') || 
+        msg1.includes('reject') || 
+        msg1.includes('cancel') || 
+        msg1.includes('User') ||
+        msg1.includes('Rechazaste') ||
+        msg1.includes('declined')
       ) {
-        throw new Error('Pago de gas cancelado: Rechazaste la firma en la ventana de Lace Wallet.');
+        throw new Error('Pago de gas cancelado: Rechazaste la firma en la ventana emergente de Lace Wallet.');
+      }
+      
+      try {
+        // Formato Estándar 2: [{ recipientAddress, amount, token: 'tNIGHT' }]
+        const res2 = await transferFn.call(walletApi, [
+          {
+            recipientAddress: contractAddr,
+            amount: BigInt(1_000_000),
+            token: 'tNIGHT',
+          },
+        ]);
+        const txHash = typeof res2 === 'string' ? res2 : (res2?.txHash || res2?.transactionId || `tx_lace_${Date.now().toString(16)}`);
+        return String(txHash);
+      } catch (err2: any) {
+        const msg2 = err2?.message || String(err2);
+        if (
+          msg2.includes('refused') || 
+          msg2.includes('reject') || 
+          msg2.includes('cancel') || 
+          msg2.includes('User') ||
+          msg2.includes('Rechazaste') ||
+          msg2.includes('declined')
+        ) {
+          throw new Error('Pago de gas cancelado: Rechazaste la firma en la ventana emergente de Lace Wallet.');
+        }
+        console.warn('⚠️ Fallback en formatos makeTransfer:', msg2);
       }
     }
   }

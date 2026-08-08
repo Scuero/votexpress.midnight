@@ -7,6 +7,7 @@ import {
   fetchRuntimeConfig,
   getCachedConfig,
   saveConfigToLocalStorage,
+  getExplorerContractUrl,
   MidnightNetwork
 } from '@/lib/midnightProviders';
 import VoterPanel from '@/components/VoterPanel';
@@ -147,17 +148,25 @@ export default function ExpressVotingPage() {
 
         {ledgerState && (ledgerState.estado === 'ABIERTA' || ledgerState.estado === 'FINALIZADA') && (
           <div style={{ textAlign: 'center', marginTop: -8, display: 'flex', justifyContent: 'center' }}>
-            <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border-subtle)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.02)', padding: '6px 12px', borderRadius: 10, border: '1px solid var(--border-subtle)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               🗳️ Contrato Activo: 
-              <span 
-                style={{ color: '#a78bfa', fontFamily: 'monospace', cursor: 'pointer', fontWeight: 600 }}
-                onClick={() => {
-                  navigator.clipboard.writeText(getCachedConfig().votingContractAddress);
-                }}
-                title="Hacé clic para copiar dirección de contrato de votación"
+              <a 
+                href={getExplorerContractUrl(getCachedConfig().votingContractAddress)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: '#a78bfa', fontFamily: 'monospace', textDecoration: 'underline', fontWeight: 600 }}
+                title="Abrir contrato de votación en Midnight Explorer (Nueva pestaña)"
               >
-                {getCachedConfig().votingContractAddress ? `${getCachedConfig().votingContractAddress.slice(0, 12)}...${getCachedConfig().votingContractAddress.slice(-10)}` : 'No configurado'} 📋
-              </span>
+                {getCachedConfig().votingContractAddress ? `${getCachedConfig().votingContractAddress.slice(0, 10)}...${getCachedConfig().votingContractAddress.slice(-8)}` : 'No configurado'} ↗
+              </a>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(getCachedConfig().votingContractAddress)}
+                title="Copiar dirección del contrato"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12 }}
+              >
+                📋
+              </button>
             </span>
           </div>
         )}
