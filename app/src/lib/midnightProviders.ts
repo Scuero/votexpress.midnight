@@ -47,7 +47,7 @@ const NETWORK_CONFIGS: Record<MidnightNetwork, Omit<NetworkConfig, 'network' | '
 
 // Caché de configuración de ejecución
 let cachedConfig = {
-  network: (process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'testnet') as MidnightNetwork,
+  network: (process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'preview') as MidnightNetwork,
   blockfrostProjectId: process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || '',
   votingContractAddress: process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || '',
   dniContractAddress: process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '',
@@ -110,8 +110,12 @@ export async function fetchRuntimeConfig(): Promise<void> {
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
+      if (parsed.network === 'testnet') {
+        parsed.network = 'preview';
+        localStorage.setItem('votexpress_config', JSON.stringify(parsed));
+      }
       cachedConfig = { ...cachedConfig, ...parsed };
-      console.log('⚙️ Configuración cargada desde LocalStorage:', cachedConfig);
+      console.log('⚙️ Configuración cargada desde LocalStorage (con auto-migración a preview):', cachedConfig);
       return;
     } catch (e) {
       console.error('Error al parsear configuración de LocalStorage:', e);
@@ -141,7 +145,7 @@ export async function fetchRuntimeConfig(): Promise<void> {
  * Obtiene la configuración de red según las variables de entorno o caché.
  */
 export function getNetworkConfig(): NetworkConfig {
-  const network = NETWORK_CONFIGS[cachedConfig.network] ? cachedConfig.network : 'testnet';
+  const network = NETWORK_CONFIGS[cachedConfig.network] ? cachedConfig.network : 'preview';
   const config = NETWORK_CONFIGS[network];
 
   return {
