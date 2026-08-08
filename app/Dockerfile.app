@@ -6,10 +6,11 @@ WORKDIR /workspace
 # Instalar dependencias necesarias para Node y utilidades de compilación
 RUN apk add --no-cache libc6-compat curl bash
 
-# Copiar configuración de la app y contrato
+# Copiar configuración de la app, scripts y contrato
 COPY app/package*.json ./app/
 COPY app/tsconfig.json ./app/
 COPY app/next.config.mjs ./app/
+COPY app/scripts/ ./app/scripts/
 COPY contract/ ./contract/
 
 # Instalar dependencias npm

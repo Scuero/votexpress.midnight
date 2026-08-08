@@ -24,10 +24,11 @@ ENV PATH="/root/.local/bin:${PATH}"
 # Descargar la versión del compilador compatible
 RUN compact update 0.23.0
 
-# Copiar configuraciones generales
+# Copiar configuraciones generales y scripts
 COPY app/package*.json ./app/
 COPY app/tsconfig.json ./app/
 COPY app/next.config.mjs ./app/
+COPY app/scripts/ ./app/scripts/
 COPY contract/ ./contract/
 
 # Instalar dependencias npm de Next.js

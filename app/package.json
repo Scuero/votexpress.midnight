@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "postinstall": "node scripts/patch-midnight-packages.js",
     "build:compact": "compact compile contract/votacion.compact src/managed/votacion && compact compile contract/registro_dni.compact src/managed/registro_dni || echo 'Compact bindings prepared'"
   },
   "dependencies": {

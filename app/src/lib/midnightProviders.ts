@@ -77,7 +77,11 @@ export function getCachedConfig() {
       cachedConfig = { ...cachedConfig, ...globalStore.__votexpress_config };
     }
   }
-  return { ...cachedConfig };
+  return {
+    ...cachedConfig,
+    votingContractAddress: cachedConfig.votingContractAddress ? cachedConfig.votingContractAddress.trim().replace(/^0x/i, '') : '',
+    dniContractAddress: cachedConfig.dniContractAddress ? cachedConfig.dniContractAddress.trim().replace(/^0x/i, '') : '',
+  };
 }
 
 /**
