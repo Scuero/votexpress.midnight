@@ -55,7 +55,7 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
   };
 
   const handleStartVoting = async () => {
-    if (!adminWallet) {
+    if (!adminWallet?.connected) {
       setError('Debes conectar una wallet de administrador para actuar como pagador de gas.');
       return;
     }
@@ -96,7 +96,7 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
       {/* Admin Wallet Connector */}
       <div className="glass-card" style={{ padding: 24, border: '1px solid rgba(139, 92, 246, 0.2)' }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: adminWallet ? '#10b981' : '#f59e0b' }} />
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: adminWallet?.connected ? '#10b981' : '#f59e0b' }} />
           Gas Payer Wallet (Administrador)
         </h3>
         <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
@@ -181,7 +181,7 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
                 type="button"
                 className="btn-primary"
                 onClick={handleStartVoting}
-                disabled={loading || ledgerState.cantidadCandidatos < 2 || !adminWallet}
+                disabled={loading || ledgerState.cantidadCandidatos < 2 || !adminWallet?.connected}
                 style={{ width: '100%', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               >
                 {loading ? 'Procesando en Midnight...' : 'Iniciar Votación Oficial'}
@@ -192,7 +192,7 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
                   ⚠️ Se requieren al menos 2 candidatos registrados para poder iniciar.
                 </div>
               )}
-              {!adminWallet && (
+              {!adminWallet?.connected && (
                 <div style={{ fontSize: 11, color: '#f59e0b', textAlign: 'center' }}>
                   ⚠️ Debes conectar tu wallet para pagar el gas antes de abrir la votación.
                 </div>

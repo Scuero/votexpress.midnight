@@ -126,49 +126,55 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
 
     return walletApi as WalletAPI;
   } catch (error: any) {
-    if (error?.code === -1 || error?.message?.includes('rejected')) {
+    let msg = 'Error desconocido';
+    try {
+      if (typeof error === 'string') {
+        msg = error;
+      } else if (error && typeof error === 'object') {
+        msg = error.message || error.error || String(error);
+      } else {
+        msg = String(error);
+      }
+    } catch {
+      msg = 'Error al comunicarse con la extensión de Lace';
+    }
+
+    if (msg.includes('rejected') || msg.includes('user rejected') || (error && error.code === -1)) {
       throw new Error('Conexión rechazada por el usuario en Lace wallet.');
     }
-    if (error?.message?.includes('Network ID mismatch') || error?.message?.includes('network') || error?.message?.includes('mismatch')) {
+    if (msg.includes('Network ID mismatch') || msg.includes('network') || msg.includes('mismatch')) {
       const expectedNet = config.network === 'local' ? 'Local (Docker devnet)' : (config.network === 'testnet' ? 'Testnet Preprod' : 'Mainnet');
       throw new Error(`Error de Red: Tu billetera Lace está configurada en una red distinta. Cambiá la red en Lace para: ${expectedNet}.`);
     }
-    throw new Error(`Error al conectar Lace: ${error?.message || 'Error desconocido'}`);
+    throw new Error(`Error al conectar Lace: ${msg}`);
   }
 }
 
 /**
  * Obtiene el estado actual de la wallet conectada.
- * Usa los métodos granulares de la API nueva (no el deprecado .state()).
+ * Lanza un error amigable si la billetera está bloqueada o no retorna dirección.
  */
 export async function getWalletState(walletApi: WalletAPI): Promise<WalletState> {
   try {
-    // Usar los métodos granulares del WalletConnectedAPI (no deprecados)
-    let address = '';
-    let balanceTDust = '0';
-
-    // getUnshieldedAddress() → dirección pública
-    if (typeof walletApi.getUnshieldedAddress === 'function') {
-      address = await walletApi.getUnshieldedAddress();
+    if (typeof walletApi.getUnshieldedAddress !== 'function') {
+      throw new Error('La API de la billetera no expone getUnshieldedAddress().');
     }
 
-    // getDustBalance() → balance de DUST (el recurso que paga las transacciones).
-    // Es un getter dedicado en el ConnectedAPI, no una clave dentro de
-    // getUnshieldedBalances() — DUST no es un "token type" más, es un recurso
-    // aparte generado por NIGHT. Ver la tabla de "Read wallet information" en
-    // https://docs.midnight.network/api-reference/dapp-connector
+    const address = await walletApi.getUnshieldedAddress();
+    if (!address) {
+      throw new Error('La billetera está bloqueada. Por favor, desbloqueá Lace e ingresá tu clave de seguridad.');
+    }
+
+    let balanceTDust = '0';
     if (typeof walletApi.getDustBalance === 'function') {
       const dustBalance = await walletApi.getDustBalance();
       balanceTDust = dustBalance.toString();
     } else if (typeof walletApi.getUnshieldedBalances === 'function') {
-      // Fallback por si la versión de la wallet conectada no expone
-      // getDustBalance() todavía.
       const balances = await walletApi.getUnshieldedBalances();
       const dustBalance = balances[''] || balances['tDUST'] || balances['dust'] || BigInt(0);
       balanceTDust = dustBalance.toString();
     }
 
-    // Determinar la red
     let networkLabel = 'unknown';
     const config = getCachedConfig();
     if (config.network === 'testnet') networkLabel = 'Preprod';
@@ -177,17 +183,22 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
 
     return {
       connected: true,
-      address: address || '',
+      address,
       balanceTDust,
       networkLabel,
     };
-  } catch {
-    return {
-      connected: false,
-      address: '',
-      balanceTDust: '0',
-      networkLabel: 'disconnected',
-    };
+  } catch (error: any) {
+    let msg = '';
+    try {
+      msg = error?.message || String(error);
+    } catch {
+      msg = 'La billetera está bloqueada';
+    }
+    throw new Error(
+      msg.includes('locked') || msg.includes('bloqueada') || msg.includes('address') || msg.includes('undefined')
+        ? 'Tu wallet Lace está bloqueada. Abrí la extensión de Lace en tu navegador, ingresá tu clave para desbloquearla y volvé a intentar.'
+        : `Error al obtener datos de la wallet: ${msg}`
+    );
   }
 }
 
