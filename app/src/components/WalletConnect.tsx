@@ -12,7 +12,7 @@ import {
 } from '../lib/walletConnector';
 
 interface WalletConnectProps {
-  onWalletConnected: (walletApi: WalletAPI | null, walletState: WalletState | null) => void;
+  onWalletConnected: (walletState: WalletState | null) => void;
   label?: string;
 }
 
@@ -36,10 +36,10 @@ export default function WalletConnect({ onWalletConnected, label = 'Conectar Lac
       walletApiRef.current = api;
       setActiveWalletApi(api);
       setWalletState(state);
-      onWalletConnected(api, state);
+      onWalletConnected(state);
     } catch (err: any) {
       setError(err?.message || 'Error al conectar la wallet.');
-      onWalletConnected(null, null);
+      onWalletConnected(null);
     } finally {
       setConnecting(false);
     }
@@ -49,7 +49,7 @@ export default function WalletConnect({ onWalletConnected, label = 'Conectar Lac
     walletApiRef.current = null;
     setActiveWalletApi(null);
     setWalletState(null);
-    onWalletConnected(null, null);
+    onWalletConnected(null);
   };
 
   if (!installed) {

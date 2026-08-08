@@ -31,7 +31,7 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
     setTimeout(() => setCopied(false), 3000);
   };
 
-  const handleWalletConnected = (api: WalletAPI | null, state: WalletState | null) => {
+  const handleWalletConnected = (state: WalletState | null) => {
     setAdminWallet(state);
   };
 
