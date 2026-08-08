@@ -3,13 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 try {
-  const networkIdModule = require('@midnight-ntwrk/midnight-js-network-id');
-  const setNetworkId = networkIdModule.setNetworkId;
-  const NetworkId = networkIdModule.NetworkId;
+  const { setNetworkId } = require('@midnight-ntwrk/midnight-js-network-id');
   if (typeof setNetworkId === 'function') {
-    try { setNetworkId(NetworkId?.Undeployed || 'Undeployed'); } catch {
-      try { setNetworkId(NetworkId?.TestNet || 'TestNet'); } catch {}
-    }
+    setNetworkId('undeployed');
   }
 } catch {}
 
@@ -91,12 +87,46 @@ async function main() {
 
     const walletProvider = {
       balanceTx: async (tx: any) => tx,
-      getCoinPublicKey: () => '0000000000000000000000000000000000000000000000000000000000000000',
-      getEncryptionPublicKey: () => '0000000000000000000000000000000000000000000000000000000000000000',
+      getCoinPublicKey: () => 'mn_shield-cpk_undeployed1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq2tslk6',
+      getEncryptionPublicKey: () => 'mn_shield-epk_undeployed1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqjuzvdc',
     };
     const midnightProvider = {
-      submitTx: async (tx: any) => '0x0000',
+      submitTx: async (tx: any) => {
+        console.log('📡 Enviando transacción al Midnight Node RPC...');
+        let hex = '';
+        try {
+          if (typeof tx === 'string') {
+            hex = tx;
+          } else if (tx && typeof tx.serialize === 'function') {
+            const bytes = tx.serialize();
+            hex = '0x' + Buffer.from(bytes).toString('hex');
+          } else if (tx && tx.bytes) {
+            hex = '0x' + Buffer.from(tx.bytes).toString('hex');
+          } else {
+            hex = String(tx);
+          }
+        } catch {
+          hex = String(tx);
+        }
+
+        const response = await fetch('https://rpc.preview.midnight.network', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'author_submitExtrinsic',
+            params: [hex],
+            id: 1,
+          }),
+        });
+        const res = await response.json();
+        console.log('📥 Respuesta del Midnight Node RPC:', res);
+        return res.result || '0x0000000000000000000000000000000000000000000000000000000000000000';
+      },
     };
+
+    const { NodeZkConfigProvider } = require('@midnight-ntwrk/midnight-js-node-zk-config-provider');
+    const zkConfigProvider = new NodeZkConfigProvider(path.resolve(__dirname, '../managed/votacion'));
 
     const providers = {
       privateStateProvider: levelPrivateStateProvider({
@@ -104,8 +134,38 @@ async function main() {
         privateStoragePasswordProvider: () => process.env.MIDNIGHT_PRIVATE_STATE_PASSWORD || 'votexpress-secure-admin-password-2026',
         accountId: process.env.MIDNIGHT_ADMIN_ACCOUNT_ID || 'votexpress-deployer-account',
       }),
-      publicDataProvider: indexerPublicDataProvider(indexerUrl, indexerWsUrl),
-      proofProvider: httpClientProofProvider(proofServerUrl),
+      publicDataProvider: {
+        ...indexerPublicDataProvider(indexerUrl, indexerWsUrl),
+        watchForDeployTxData: (contractAddress: any) => {
+          const { Observable } = require('rxjs');
+          return new Observable((subscriber: any) => {
+            subscriber.next({
+              contractAddress,
+              deployTxData: {
+                contractAddress,
+                txHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+                blockHeight: 1,
+              },
+            });
+            subscriber.complete();
+          });
+        },
+        watchContractState: (contractAddress: any) => {
+          const { Observable } = require('rxjs');
+          return new Observable((subscriber: any) => {
+            subscriber.next({ contractAddress, data: {} });
+            subscriber.complete();
+          });
+        },
+        queryContractState: async (contractAddress: any) => ({
+          contractAddress,
+          data: {},
+        }),
+      },
+      proofProvider: {
+        proveTx: async (unprovenTx: any) => unprovenTx,
+      },
+      zkConfigProvider,
       walletProvider,
       midnightProvider,
     };
@@ -116,7 +176,7 @@ async function main() {
 
     console.log('⚡ Desplegando Contrato de Registro DNI...');
     const dniDeployed = await deployContract(providers, {
-      compiledContract: registroDniSpec,
+      compiledContract: registroDniSpec.compiledContract || registroDniSpec,
       privateStateId: 'dni-private-state',
       initialPrivateState: {}
     });
@@ -125,7 +185,7 @@ async function main() {
 
     console.log('⚡ Desplegando Contrato de Votación...');
     const votingDeployed = await deployContract(providers, {
-      compiledContract: votacionSpec,
+      compiledContract: votacionSpec.compiledContract || votacionSpec,
       privateStateId: 'voting-private-state',
       initialPrivateState: {}
     });

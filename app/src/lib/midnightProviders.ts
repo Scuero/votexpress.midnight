@@ -49,8 +49,8 @@ const NETWORK_CONFIGS: Record<MidnightNetwork, Omit<NetworkConfig, 'network' | '
 let cachedConfig = {
   network: (process.env.MIDNIGHT_NETWORK || process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'testnet') as MidnightNetwork,
   blockfrostProjectId: process.env.BLOCKFROST_PROJECT_ID || process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || '',
-  votingContractAddress: process.env.VOTING_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || '67647684f68a84c24b4cdc0aa119c06535f7dc8ae793afa98e9d9f917908ba0f',
-  dniContractAddress: process.env.DNI_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '67647684f68a84c24b4cdc0aa119c06535f7dc8ae793afa98e9d9f917908ba0f',
+  votingContractAddress: process.env.VOTING_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || '8ac29e39f6ac3de1dd63db8b9d9c5eed8efd407e900901987b32418e9f51457e',
+  dniContractAddress: process.env.DNI_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '0a397d25eb5779f68fb3685756006d332077185d956bd652d248b00519c8ba10',
   proofServerUrl: process.env.PROOF_SERVER_URL || process.env.NEXT_PUBLIC_PROOF_SERVER_URL || 'http://localhost:6300',
 };
 
@@ -75,8 +75,8 @@ export function getCachedConfig() {
     const globalStore = globalThis as unknown as { __votexpress_config?: typeof cachedConfig };
     
     // Leer variables de entorno vivas en tiempo de ejecución del contenedor (Cloud Run)
-    const envVoting = process.env.VOTING_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || '67647684f68a84c24b4cdc0aa119c06535f7dc8ae793afa98e9d9f917908ba0f';
-    const envDni = process.env.DNI_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '67647684f68a84c24b4cdc0aa119c06535f7dc8ae793afa98e9d9f917908ba0f';
+    const envVoting = process.env.VOTING_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || '8ac29e39f6ac3de1dd63db8b9d9c5eed8efd407e900901987b32418e9f51457e';
+    const envDni = process.env.DNI_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '0a397d25eb5779f68fb3685756006d332077185d956bd652d248b00519c8ba10';
     const envNetwork = (process.env.MIDNIGHT_NETWORK || process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'testnet') as MidnightNetwork;
     const envProof = process.env.PROOF_SERVER_URL || process.env.NEXT_PUBLIC_PROOF_SERVER_URL || 'http://localhost:6300';
     const envBf = process.env.BLOCKFROST_PROJECT_ID || process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || '';

@@ -343,7 +343,7 @@ export async function requestLaceGasApproval(actionName: string): Promise<string
   }
 
   const config = getCachedConfig();
-  const contractAddr = config.votingContractAddress || '67647684f68a84c24b4cdc0aa119c06535f7dc8ae793afa98e9d9f917908ba0f';
+  const contractAddr = config.votingContractAddress || '8ac29e39f6ac3de1dd63db8b9d9c5eed8efd407e900901987b32418e9f51457e';
 
   // 1. Probar makeTransfer especificando el token tDUST de comisiones de gas de Midnight
   const transferFn = walletApi.makeTransfer || walletApi.transfer;
