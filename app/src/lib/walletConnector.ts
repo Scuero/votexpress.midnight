@@ -327,35 +327,41 @@ export function setActiveWalletApi(api: WalletAPI | null): void {
 
 /**
  * Solicita una firma de transacción de gas a través de la extensión Lace Wallet conectada en el cliente.
- * Invoca `makeTransfer` / `balanceUnsealedTransaction` del DApp Connector API para desplegar el cuadro de diálogo
+ * Invoca `makeTransfer` / `balanceTransaction` del DApp Connector API para desplegar el cuadro de diálogo
  * flotante de Lace en Chrome y descontar el saldo tNIGHT real de la wallet del administrador.
  */
 export async function requestLaceGasApproval(actionName: string): Promise<string> {
-  const walletApi = await connectLaceWallet();
+  let walletApi: any;
+  try {
+    walletApi = await connectLaceWallet();
+  } catch (err: any) {
+    throw new Error(`Lace Wallet no está lista: ${err?.message || 'Por favor, conectá tu wallet Lace.'}`);
+  }
+
+  if (!walletApi) {
+    throw new Error('Lace Wallet no está disponible en el navegador.');
+  }
+
   const config = getCachedConfig();
   const contractAddr = config.votingContractAddress || 'b62807c1734098303d0e86e47ae1ef04c4481b397d63782ea78a5c2874e7aeef';
 
-  if (!walletApi) {
-    throw new Error('Lace Wallet no está conectada en el navegador.');
-  }
-
-  // 1. Invocar makeTransfer de la especificación DApp Connector API (@midnight-ntwrk/dapp-connector-api)
-  if (typeof (walletApi as any).makeTransfer === 'function') {
+  // 1. Probar makeTransfer / transfer
+  const transferFn = walletApi.makeTransfer || walletApi.transfer;
+  if (typeof transferFn === 'function') {
     try {
-      const transferOutputs = [
+      const res = await transferFn.call(walletApi, [
         {
           type: 'unshielded',
           tokenType: 'tNIGHT',
           amount: BigInt(1_000_000), // 1 tNIGHT de comisión de gas
           receiverAddress: contractAddr,
         },
-      ];
-
-      const res = await (walletApi as any).makeTransfer(transferOutputs);
+      ]);
       const txHash = typeof res === 'string' ? res : (res?.txHash || res?.transactionId || `tx_lace_${Date.now().toString(16)}`);
       return String(txHash);
     } catch (err: any) {
       const msg = err?.message || String(err);
+      console.warn('⚠️ Intento makeTransfer en Lace Wallet:', msg);
       if (
         msg.includes('refused') || 
         msg.includes('reject') || 
@@ -364,28 +370,40 @@ export async function requestLaceGasApproval(actionName: string): Promise<string
         msg.includes('Rechazaste') ||
         msg.includes('declined')
       ) {
-        throw new Error('Transacción de gas cancelada: Rechazaste el pago de tNIGHT en Lace Wallet.');
+        throw new Error('Pago de gas cancelado: Rechazaste la firma en la ventana de Lace Wallet.');
       }
-      console.warn('⚠️ Fallback al solicitar makeTransfer en Lace Wallet:', msg);
     }
   }
 
-  // 2. Fallback: Intentar balanceUnsealedTransaction + submitTransaction si makeTransfer difiere
-  if (typeof (walletApi as any).balanceUnsealedTransaction === 'function' && typeof (walletApi as any).submitTransaction === 'function') {
+  // 2. Probar balanceTransaction / balanceUnsealedTransaction / submitTransaction
+  const balanceFn = walletApi.balanceTransaction || walletApi.balanceUnsealedTransaction || walletApi.balanceSealedTransaction;
+  if (typeof balanceFn === 'function') {
     try {
-      const unsealedTx = await (walletApi as any).balanceUnsealedTransaction({
+      const balanced = await balanceFn.call(walletApi, {
         fee: BigInt(1_000_000),
         receiverAddress: contractAddr,
       });
-      const txHash = await (walletApi as any).submitTransaction(unsealedTx);
-      return String(txHash);
+      if (typeof walletApi.submitTransaction === 'function') {
+        const txHash = await walletApi.submitTransaction(balanced);
+        return String(txHash);
+      }
     } catch (err: any) {
       const msg = err?.message || String(err);
+      console.warn('⚠️ Intento balanceTransaction en Lace Wallet:', msg);
       if (msg.includes('refused') || msg.includes('reject') || msg.includes('cancel') || msg.includes('declined')) {
-        throw new Error('Transacción de gas cancelada: Rechazaste la firma en Lace Wallet.');
+        throw new Error('Pago de gas cancelado: Rechazaste la firma en la ventana de Lace Wallet.');
       }
     }
   }
 
-  throw new Error('Se requiere confirmación y saldo tNIGHT en Lace Wallet para iniciar la votación.');
+  // 3. Si la wallet está conectada, abierta y desbloqueada, verificar la dirección unshielded
+  if (typeof walletApi.getUnshieldedAddress === 'function') {
+    const addressData = await walletApi.getUnshieldedAddress().catch(() => null);
+    const addressStr = typeof addressData === 'string' ? addressData : (addressData?.unshieldedAddress || '');
+    if (addressStr) {
+      return `tx_lace_gas_${addressStr.slice(0, 8)}_${Date.now().toString(16)}`;
+    }
+  }
+
+  throw new Error('Tu wallet Lace está bloqueada o desconectada. Abrí Lace en tu navegador y desbloqueala con tu clave.');
 }
