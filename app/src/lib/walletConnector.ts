@@ -132,11 +132,13 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
     return walletApi as WalletAPI;
   } catch (error: any) {
     let msg = 'Error desconocido';
+    let code: any = undefined;
     try {
       if (typeof error === 'string') {
         msg = error;
       } else if (error && typeof error === 'object') {
         msg = error.message || error.error || String(error);
+        code = error.code;
       } else {
         msg = String(error);
       }
@@ -144,11 +146,15 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
       msg = 'Error al comunicarse con la extensión de Lace';
     }
 
-    if (msg.includes('rejected') || msg.includes('user rejected') || (error && error.code === -1)) {
+    if (msg.includes('rejected') || msg.includes('user rejected') || code === -1) {
       throw new Error('Conexión rechazada por el usuario en Lace wallet.');
     }
     if (msg.includes('Network ID mismatch') || msg.includes('network') || msg.includes('mismatch')) {
-      const expectedNet = config.network === 'local' ? 'Local (Docker devnet)' : (config.network === 'testnet' ? 'Testnet Preprod' : 'Mainnet');
+      const expectedNet = config.network === 'local' 
+        ? 'Local (Docker devnet)' 
+        : (config.network === 'testnet' 
+           ? 'Testnet Preprod' 
+           : (config.network === 'preview' ? 'Testnet Preview' : 'Mainnet'));
       throw new Error(`Error de Red: Tu billetera Lace está configurada en una red distinta. Cambiá la red en Lace para: ${expectedNet}.`);
     }
     throw new Error(`Error al conectar Lace: ${msg}`);
