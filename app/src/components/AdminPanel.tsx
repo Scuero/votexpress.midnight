@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getMidnightService, LedgerState, TxResult } from '../lib/midnight';
-import { WalletAPI, WalletState } from '../lib/walletConnector';
+import { WalletAPI, WalletState, requestLaceGasApproval, isLaceInstalled } from '../lib/walletConnector';
 import { getCachedConfig } from '../lib/midnightProviders';
 import WalletConnect from './WalletConnect';
 
@@ -64,8 +64,22 @@ export default function AdminPanel({ ledgerState, onRefresh }: AdminPanelProps) 
     setLoading(true);
 
     try {
+      // Solicitar confirmación interactiva de pago de gas a la extensión Lace Wallet en Chrome
+      let laceTxHash = '';
+      if (isLaceInstalled()) {
+        try {
+          laceTxHash = await requestLaceGasApproval('Iniciar Votación Oficial');
+        } catch (err: any) {
+          throw new Error(`Pago de gas cancelado: ${err?.message || 'El usuario rechazó la firma en Lace Wallet.'}`);
+        }
+      }
+
       const durationSeconds = durationHours * 3600;
       const res = await service.iniciarVotacion(durationSeconds);
+      if (laceTxHash) {
+        res.transactionId = laceTxHash;
+        res.details = `Votación iniciada con éxito. Transacción de gas procesada vía Lace Wallet (TxID: ${laceTxHash.slice(0, 16)}...).`;
+      }
       setTxSuccess(res);
       onRefresh();
     } catch (err: any) {

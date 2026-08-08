@@ -126,6 +126,7 @@ class RealMidnightServerService implements IMidnightService {
   private sessionCandidatos: string[] = [];
   private sessionEstado: EstadoVotacion = 'CERRADA';
   private sessionConteoVotos: Map<string, number> = new Map();
+  private registeredNullifiers: Set<string> = new Set();
 
   /**
    * Construye el objeto MidnightProviders completo según la documentación oficial.
@@ -253,6 +254,7 @@ class RealMidnightServerService implements IMidnightService {
     }
 
     this.sessionEstado = 'ABIERTA';
+    this.registeredNullifiers.clear();
 
     try {
       const tx = await withTimeout(
@@ -337,6 +339,14 @@ class RealMidnightServerService implements IMidnightService {
     if (!config.votingContractAddress) {
       throw new Error('Contrato de votación no configurado.');
     }
+
+    // Verificar si este DNI (nullifier) ya emitió un voto en esta elección
+    if (this.registeredNullifiers.has(nullifierHex)) {
+      throw new Error('Este DNI ya ha emitido su voto en esta elección. No se permite el doble voto.');
+    }
+
+    // Registrar el nullifier para bloquear votos duplicados futuros
+    this.registeredNullifiers.add(nullifierHex);
 
     // Incrementar conteo de votos en sesión para el candidato seleccionado
     const currentVotes = this.sessionConteoVotos.get(candidato) || 0;

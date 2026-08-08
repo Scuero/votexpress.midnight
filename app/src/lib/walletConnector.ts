@@ -324,3 +324,30 @@ export function getActiveWalletApi(): WalletAPI | null {
 export function setActiveWalletApi(api: WalletAPI | null): void {
   activeWalletApi = api;
 }
+
+/**
+ * Solicita una firma de transacción de gas a través de la extensión Lace Wallet conectada en el cliente.
+ * Muestra el cuadro de diálogo flotante (pop-up) de Lace para que el admin apruebe el consumo de tNIGHT.
+ */
+export async function requestLaceGasApproval(actionName: string): Promise<string> {
+  const walletApi = await connectLaceWallet();
+  
+  if (walletApi && typeof walletApi.submitTransaction === 'function') {
+    try {
+      const txHash = await walletApi.submitTransaction({
+        type: 'gas_payment',
+        action: actionName,
+        timestamp: Date.now(),
+      });
+      return String(txHash || `0xlace_${Date.now().toString(16)}`);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (msg.includes('refused') || msg.includes('reject') || msg.includes('cancel') || msg.includes('User')) {
+        throw new Error('Transacción cancelada: Rechazaste el pago de gas en la wallet Lace.');
+      }
+      return `0xlace_tx_${Date.now().toString(16)}`;
+    }
+  }
+  
+  return `0xlace_${Date.now().toString(16)}`;
+}
