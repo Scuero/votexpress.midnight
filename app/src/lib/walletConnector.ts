@@ -345,15 +345,16 @@ export async function requestLaceGasApproval(actionName: string): Promise<string
   const config = getCachedConfig();
   const contractAddr = config.votingContractAddress || 'b62807c1734098303d0e86e47ae1ef04c4481b397d63782ea78a5c2874e7aeef';
 
-  // 1. Probar makeTransfer con los formatos oficiales de la especificación DApp Connector API
+  // 1. Probar makeTransfer especificando el token tDUST de comisiones de gas de Midnight
   const transferFn = walletApi.makeTransfer || walletApi.transfer;
   if (typeof transferFn === 'function') {
     try {
-      // Formato Estándar 1: [{ receiverAddress, amount }]
+      // Formato Oficial 1: [{ receiverAddress, amount, token: 'tDUST' }]
       const res = await transferFn.call(walletApi, [
         {
           receiverAddress: contractAddr,
-          amount: BigInt(1_000_000), // 1 tNIGHT
+          amount: BigInt(1_000_000), // 1 tDUST de comisión de gas
+          token: 'tDUST',
         },
       ]);
       const txHash = typeof res === 'string' ? res : (res?.txHash || res?.transactionId || `tx_lace_${Date.now().toString(16)}`);
@@ -368,16 +369,16 @@ export async function requestLaceGasApproval(actionName: string): Promise<string
         msg1.includes('Rechazaste') ||
         msg1.includes('declined')
       ) {
-        throw new Error('Pago de gas cancelado: Rechazaste la firma en la ventana emergente de Lace Wallet.');
+        throw new Error('Pago de gas tDUST cancelado: Rechazaste la firma en la ventana emergente de Lace Wallet.');
       }
       
       try {
-        // Formato Estándar 2: [{ recipientAddress, amount, token: 'tNIGHT' }]
+        // Formato Oficial 2: [{ recipientAddress, amount, tokenType: 'tDUST' }]
         const res2 = await transferFn.call(walletApi, [
           {
             recipientAddress: contractAddr,
             amount: BigInt(1_000_000),
-            token: 'tNIGHT',
+            tokenType: 'tDUST',
           },
         ]);
         const txHash = typeof res2 === 'string' ? res2 : (res2?.txHash || res2?.transactionId || `tx_lace_${Date.now().toString(16)}`);
@@ -392,9 +393,9 @@ export async function requestLaceGasApproval(actionName: string): Promise<string
           msg2.includes('Rechazaste') ||
           msg2.includes('declined')
         ) {
-          throw new Error('Pago de gas cancelado: Rechazaste la firma en la ventana emergente de Lace Wallet.');
+          throw new Error('Pago de gas tDUST cancelado: Rechazaste la firma en la ventana emergente de Lace Wallet.');
         }
-        console.warn('⚠️ Fallback en formatos makeTransfer:', msg2);
+        console.warn('⚠️ Fallback en formatos makeTransfer con tDUST:', msg2);
       }
     }
   }
