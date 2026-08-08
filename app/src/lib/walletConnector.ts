@@ -175,21 +175,27 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
 
     let balanceTDust = '0';
     let balanceTNight = '0';
-    if (typeof walletApi.getUnshieldedBalances === 'function') {
-      const balances = await walletApi.getUnshieldedBalances();
-      let dustBalance = BigInt(0);
-      let nightBalance = BigInt(0);
-      if (balances) {
-        if (typeof (balances as any).get === 'function') {
-          dustBalance = (balances as any).get('') || (balances as any).get('tDUST') || (balances as any).get('dust') || BigInt(0);
-          nightBalance = (balances as any).get('tNIGHT') || (balances as any).get('NIGHT') || (balances as any).get('night') || BigInt(0);
-        } else {
-          dustBalance = (balances as any)[''] || (balances as any)['tDUST'] || (balances as any)['dust'] || BigInt(0);
-          nightBalance = (balances as any)['tNIGHT'] || (balances as any)['NIGHT'] || (balances as any)['night'] || BigInt(0);
+    try {
+      if (typeof walletApi.getUnshieldedBalances === 'function') {
+        const balances = await walletApi.getUnshieldedBalances();
+        let dustBalance = BigInt(0);
+        let nightBalance = BigInt(0);
+        if (balances) {
+          if (typeof (balances as any).get === 'function') {
+            dustBalance = (balances as any).get('') || (balances as any).get('tDUST') || (balances as any).get('dust') || BigInt(0);
+            nightBalance = (balances as any).get('tNIGHT') || (balances as any).get('NIGHT') || (balances as any).get('night') || BigInt(0);
+          } else {
+            dustBalance = (balances as any)[''] || (balances as any)['tDUST'] || (balances as any)['dust'] || BigInt(0);
+            nightBalance = (balances as any)['tNIGHT'] || (balances as any)['NIGHT'] || (balances as any)['night'] || BigInt(0);
+          }
         }
+        balanceTDust = dustBalance.toString();
+        balanceTNight = nightBalance.toString();
       }
-      balanceTDust = dustBalance.toString();
-      balanceTNight = nightBalance.toString();
+    } catch (e) {
+      console.warn('No se pudieron obtener los balances de la wallet:', e);
+      balanceTDust = '--';
+      balanceTNight = '--';
     }
 
     // Validar si la red de la billetera coincide con la seleccionada en la DApp
@@ -259,10 +265,11 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
  * Formatea una dirección larga a un formato corto legible.
  * Ej: "0x1234...abcd"
  */
-export function formatAddress(address: string, chars = 6): string {
-  if (!address) return '';
-  if (address.length <= chars * 2 + 3) return address;
-  return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
+export function formatAddress(address: any, chars = 6): string {
+  const str = typeof address === 'string' ? address : (address ? String(address) : '');
+  if (!str) return '';
+  if (str.length <= chars * 2 + 3) return str;
+  return `${str.slice(0, chars + 2)}...${str.slice(-chars)}`;
 }
 
 let activeWalletApi: WalletAPI | null = null;

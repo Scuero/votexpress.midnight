@@ -38,7 +38,21 @@ export default function WalletConnect({ onWalletConnected, label = 'Conectar Lac
       setWalletState(state);
       onWalletConnected(state);
     } catch (err: any) {
-      setError(err?.message || 'Error al conectar la wallet.');
+      let errMsg = 'Error al conectar la wallet.';
+      try {
+        if (err) {
+          if (typeof err === 'string') {
+            errMsg = err;
+          } else if (typeof err === 'object') {
+            errMsg = err.message || err.error || String(err);
+          } else {
+            errMsg = String(err);
+          }
+        }
+      } catch {
+        errMsg = `Error de comunicación con Lace Wallet (${err ? String(err) : 'detalles no disponibles'})`;
+      }
+      setError(errMsg);
       onWalletConnected(null);
     } finally {
       setConnecting(false);
