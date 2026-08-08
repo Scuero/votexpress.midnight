@@ -13,11 +13,11 @@ const globalStore = globalThis as unknown as { __votexpress_config?: ConfigStore
 
 if (!globalStore.__votexpress_config) {
   globalStore.__votexpress_config = {
-    network: process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || process.env.MIDNIGHT_NETWORK || 'testnet',
-    blockfrostProjectId: process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || process.env.BLOCKFROST_PROJECT_ID || '',
-    votingContractAddress: process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || process.env.VOTING_CONTRACT_ADDRESS || '',
-    dniContractAddress: process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || process.env.DNI_CONTRACT_ADDRESS || '',
-    proofServerUrl: process.env.NEXT_PUBLIC_PROOF_SERVER_URL || process.env.PROOF_SERVER_URL || 'http://localhost:6300',
+    network: process.env.MIDNIGHT_NETWORK || process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'testnet',
+    blockfrostProjectId: process.env.BLOCKFROST_PROJECT_ID || process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || '',
+    votingContractAddress: process.env.VOTING_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || 'b62807c1734098303d0e86e47ae1ef04c4481b397d63782ea78a5c2874e7aeef',
+    dniContractAddress: process.env.DNI_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '8ccc6bf37e02cfdbfa330c49288f23d894fe95f8bf42a62dd3d29709b4d75332',
+    proofServerUrl: process.env.PROOF_SERVER_URL || process.env.NEXT_PUBLIC_PROOF_SERVER_URL || 'http://localhost:6300',
   };
 }
 

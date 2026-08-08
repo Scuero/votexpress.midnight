@@ -45,13 +45,13 @@ const NETWORK_CONFIGS: Record<MidnightNetwork, Omit<NetworkConfig, 'network' | '
   },
 };
 
-// Caché de configuración de ejecución
+// Caché de configuración de ejecución con fallbacks hardcodeados para Cloud Run multi-instancia
 let cachedConfig = {
-  network: (process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || process.env.MIDNIGHT_NETWORK || 'preview') as MidnightNetwork,
-  blockfrostProjectId: process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || process.env.BLOCKFROST_PROJECT_ID || '',
-  votingContractAddress: process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || process.env.VOTING_CONTRACT_ADDRESS || '',
-  dniContractAddress: process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || process.env.DNI_CONTRACT_ADDRESS || '',
-  proofServerUrl: process.env.NEXT_PUBLIC_PROOF_SERVER_URL || process.env.PROOF_SERVER_URL || '',
+  network: (process.env.MIDNIGHT_NETWORK || process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'testnet') as MidnightNetwork,
+  blockfrostProjectId: process.env.BLOCKFROST_PROJECT_ID || process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || '',
+  votingContractAddress: process.env.VOTING_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || 'b62807c1734098303d0e86e47ae1ef04c4481b397d63782ea78a5c2874e7aeef',
+  dniContractAddress: process.env.DNI_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '8ccc6bf37e02cfdbfa330c49288f23d894fe95f8bf42a62dd3d29709b4d75332',
+  proofServerUrl: process.env.PROOF_SERVER_URL || process.env.NEXT_PUBLIC_PROOF_SERVER_URL || 'http://localhost:6300',
 };
 
 export function saveConfigToLocalStorage(config: typeof cachedConfig) {
@@ -73,6 +73,20 @@ export function saveConfigToLocalStorage(config: typeof cachedConfig) {
 export function getCachedConfig() {
   if (typeof window === 'undefined') {
     const globalStore = globalThis as unknown as { __votexpress_config?: typeof cachedConfig };
+    
+    // Leer variables de entorno vivas en tiempo de ejecución del contenedor (Cloud Run)
+    const envVoting = process.env.VOTING_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || 'b62807c1734098303d0e86e47ae1ef04c4481b397d63782ea78a5c2874e7aeef';
+    const envDni = process.env.DNI_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '8ccc6bf37e02cfdbfa330c49288f23d894fe95f8bf42a62dd3d29709b4d75332';
+    const envNetwork = (process.env.MIDNIGHT_NETWORK || process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'testnet') as MidnightNetwork;
+    const envProof = process.env.PROOF_SERVER_URL || process.env.NEXT_PUBLIC_PROOF_SERVER_URL || 'http://localhost:6300';
+    const envBf = process.env.BLOCKFROST_PROJECT_ID || process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || '';
+
+    if (envVoting) cachedConfig.votingContractAddress = envVoting;
+    if (envDni) cachedConfig.dniContractAddress = envDni;
+    if (envNetwork) cachedConfig.network = envNetwork;
+    if (envProof) cachedConfig.proofServerUrl = envProof;
+    if (envBf) cachedConfig.blockfrostProjectId = envBf;
+
     if (globalStore.__votexpress_config) {
       cachedConfig = { ...cachedConfig, ...globalStore.__votexpress_config };
     }
