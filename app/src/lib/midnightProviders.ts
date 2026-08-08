@@ -47,11 +47,11 @@ const NETWORK_CONFIGS: Record<MidnightNetwork, Omit<NetworkConfig, 'network' | '
 
 // Caché de configuración de ejecución
 let cachedConfig = {
-  network: (process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || 'preview') as MidnightNetwork,
-  blockfrostProjectId: process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || '',
-  votingContractAddress: process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || '',
-  dniContractAddress: process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || '',
-  proofServerUrl: process.env.NEXT_PUBLIC_PROOF_SERVER_URL || '',
+  network: (process.env.NEXT_PUBLIC_MIDNIGHT_NETWORK || process.env.MIDNIGHT_NETWORK || 'preview') as MidnightNetwork,
+  blockfrostProjectId: process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID || process.env.BLOCKFROST_PROJECT_ID || '',
+  votingContractAddress: process.env.NEXT_PUBLIC_VOTING_CONTRACT_ADDRESS || process.env.VOTING_CONTRACT_ADDRESS || '',
+  dniContractAddress: process.env.NEXT_PUBLIC_DNI_CONTRACT_ADDRESS || process.env.DNI_CONTRACT_ADDRESS || '',
+  proofServerUrl: process.env.NEXT_PUBLIC_PROOF_SERVER_URL || process.env.PROOF_SERVER_URL || '',
 };
 
 export function saveConfigToLocalStorage(config: typeof cachedConfig) {
@@ -89,8 +89,19 @@ export function getCachedConfig() {
  */
 export async function fetchRuntimeConfig(): Promise<void> {
   if (typeof window === 'undefined') return; // Solo ejecutar en cliente
+
+  // 1. Cargar del servidor primero (para obtener variables de entorno de Docker/Cloud Run)
+  let serverData: any = {};
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) {
+      serverData = await res.json();
+    }
+  } catch (err) {
+    console.warn('⚠️ No se pudo obtener la configuración de la API de servidor:', err);
+  }
   
-  // 1. Verificar si hay parámetros en la URL (ideal para compartir links entre dispositivos)
+  // 2. Verificar si hay parámetros en la URL
   const urlParams = new URLSearchParams(window.location.search);
   const urlNet = urlParams.get('net');
   const urlVoting = urlParams.get('voting');
@@ -100,54 +111,44 @@ export async function fetchRuntimeConfig(): Promise<void> {
   
   if (urlNet || urlVoting || urlDni) {
     const newConfig = {
-      network: (urlNet || cachedConfig.network) as MidnightNetwork,
-      blockfrostProjectId: urlBf || cachedConfig.blockfrostProjectId,
-      votingContractAddress: urlVoting || cachedConfig.votingContractAddress,
-      dniContractAddress: urlDni || cachedConfig.dniContractAddress,
-      proofServerUrl: urlProof || cachedConfig.proofServerUrl,
+      network: (urlNet || serverData.network || cachedConfig.network) as MidnightNetwork,
+      blockfrostProjectId: urlBf || serverData.blockfrostProjectId || cachedConfig.blockfrostProjectId,
+      votingContractAddress: urlVoting || serverData.votingContractAddress || cachedConfig.votingContractAddress,
+      dniContractAddress: urlDni || serverData.dniContractAddress || cachedConfig.dniContractAddress,
+      proofServerUrl: urlProof || serverData.proofServerUrl || cachedConfig.proofServerUrl,
     };
     saveConfigToLocalStorage(newConfig);
     console.log('🔗 Configuración importada desde URL compartida:', newConfig);
     
-    // Limpiar los parámetros de la URL para dejarla limpia
     const cleanUrl = window.location.pathname;
     window.history.replaceState({}, document.title, cleanUrl);
     return;
   }
 
-  // 2. Intentar cargar de LocalStorage primero
+  // 3. Cargar de LocalStorage y combinar con servidor
+  let localData: any = {};
   const saved = localStorage.getItem('votexpress_config');
   if (saved) {
     try {
-      const parsed = JSON.parse(saved);
-      if (parsed.network === 'testnet') {
-        parsed.network = 'preview';
-        localStorage.setItem('votexpress_config', JSON.stringify(parsed));
+      localData = JSON.parse(saved);
+      if (localData.network === 'testnet') {
+        localData.network = 'preview';
       }
-      cachedConfig = { ...cachedConfig, ...parsed };
-      console.log('⚙️ Configuración cargada desde LocalStorage (con auto-migración a preview):', cachedConfig);
-      return;
     } catch (e) {
       console.error('Error al parsear configuración de LocalStorage:', e);
     }
   }
 
-  // 3. Fallback a la API de servidor (Cloud Run Env)
-  try {
-    const res = await fetch('/api/config');
-    if (res.ok) {
-      const data = await res.json();
-      cachedConfig = {
-        network: (data.network || cachedConfig.network) as MidnightNetwork,
-        blockfrostProjectId: data.blockfrostProjectId || cachedConfig.blockfrostProjectId,
-        votingContractAddress: data.votingContractAddress || cachedConfig.votingContractAddress,
-        dniContractAddress: data.dniContractAddress || cachedConfig.dniContractAddress,
-        proofServerUrl: data.proofServerUrl || cachedConfig.proofServerUrl,
-      };
-      console.log('⚙️ Configuración en ejecución cargada desde API de servidor:', cachedConfig);
-    }
-  } catch (err) {
-    console.warn('⚠️ No se pudo obtener la configuración dinámica del servidor, usando variables estáticas:', err);
+  cachedConfig = {
+    network: (localData.network || serverData.network || cachedConfig.network) as MidnightNetwork,
+    blockfrostProjectId: localData.blockfrostProjectId || serverData.blockfrostProjectId || cachedConfig.blockfrostProjectId,
+    votingContractAddress: localData.votingContractAddress || serverData.votingContractAddress || cachedConfig.votingContractAddress,
+    dniContractAddress: localData.dniContractAddress || serverData.dniContractAddress || cachedConfig.dniContractAddress,
+    proofServerUrl: localData.proofServerUrl || serverData.proofServerUrl || cachedConfig.proofServerUrl,
+  };
+
+  if (serverData.votingContractAddress && (!localData.votingContractAddress || localData.votingContractAddress !== cachedConfig.votingContractAddress)) {
+    saveConfigToLocalStorage(cachedConfig);
   }
 }
 

@@ -1,7 +1,13 @@
 node_modules/
+.next/
+app/.next/
+app/node_modules/
+*.tsbuildinfo
 dist/
 .env
+.env.local
 .env.*
 !.env.example
 contract/src/managed/
+app/src/managed/
 .DS_Store
