@@ -343,42 +343,29 @@ class RealMidnightServerService implements IMidnightService {
 
   async getLedgerState(): Promise<LedgerState> {
     const config = getCachedConfig();
+    const defaultState: LedgerState = {
+      estado: 'CERRADA',
+      candidatos: [],
+      totalVotos: 0,
+      horaInicio: null,
+      duracionSegundos: getDefaultVotingDuration(),
+      tiempoRestante: -1,
+      cantidadCandidatos: 0,
+    };
+
     if (!config.votingContractAddress) {
-      return {
-        estado: 'CERRADA',
-        candidatos: [],
-        totalVotos: 0,
-        horaInicio: null,
-        duracionSegundos: getDefaultVotingDuration(),
-        tiempoRestante: -1,
-        cantidadCandidatos: 0,
-      };
+      return defaultState;
     }
 
-    const providers = await this.getProviders();
+    try {
+      const providers = await this.getProviders();
+      const contractState = await providers.publicDataProvider.queryContractState(
+        config.votingContractAddress
+      ).catch(() => null);
 
-    // El ledger NO se lee a través del FoundContract (no expone `.state`).
-    // Se consulta directamente al publicDataProvider (indexer) y se parsea
-    // con la función estática `ledger()` que exporta el módulo compilado.
-    // Ver: https://docs.midnight.network/tutorials/counter/counter-cli
-    //      https://docs.midnight.network/tutorials/bboard/bboard-api-implementation
-    const contractState = await providers.publicDataProvider.queryContractState(
-      config.votingContractAddress
-    );
-
-    if (!contractState) {
-      // El contrato aún no tiene estado indexado on-chain (recién desplegado
-      // o el indexer todavía no lo procesó).
-      return {
-        estado: 'CERRADA',
-        candidatos: [],
-        totalVotos: 0,
-        horaInicio: null,
-        duracionSegundos: getDefaultVotingDuration(),
-        tiempoRestante: -1,
-        cantidadCandidatos: 0,
-      };
-    }
+      if (!contractState) {
+        return defaultState;
+      }
 
     const ledger = votacionContract.ledger(contractState.data);
 
@@ -411,15 +398,19 @@ class RealMidnightServerService implements IMidnightService {
       }
     }
 
-    return {
-      estado,
-      candidatos,
-      totalVotos: Number(ledger.total_votos),
-      horaInicio,
-      duracionSegundos,
-      tiempoRestante,
-      cantidadCandidatos: Number(ledger.cantidad_candidatos),
-    };
+      return {
+        estado,
+        candidatos,
+        totalVotos: Number(ledger.total_votos),
+        horaInicio,
+        duracionSegundos,
+        tiempoRestante,
+        cantidadCandidatos: Number(ledger.cantidad_candidatos),
+      };
+    } catch (err) {
+      console.warn('⚠️ No se pudo obtener el estado del ledger desde la red Midnight:', err);
+      return defaultState;
+    }
   }
 
   getHourlySnapshots(): HourlySnapshot[] {

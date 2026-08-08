@@ -33,24 +33,45 @@ export default function AdminPage() {
 
   useEffect(() => {
     const init = async () => {
-      // 1. Cargar config en tiempo de ejecución
-      await fetchRuntimeConfig();
+      try {
+        // 1. Cargar config en tiempo de ejecución
+        await fetchRuntimeConfig();
 
-      const current = getCachedConfig();
-      setNetworkSetting(current.network);
-      setBfProjectId(current.blockfrostProjectId);
-      setVotingContract(current.votingContractAddress);
-      setDniContract(current.dniContractAddress);
-      setProofUrl(current.proofServerUrl);
+        const current = getCachedConfig();
+        setNetworkSetting(current.network);
+        setBfProjectId(current.blockfrostProjectId);
+        setVotingContract(current.votingContractAddress);
+        setDniContract(current.dniContractAddress);
+        setProofUrl(current.proofServerUrl);
 
-      // 2. Verificar estado de Proof Server
-      const res = await service.checkProofServerHealth();
-      setProofServerOnline(res.status);
-      setProofServerMsg(res.message);
+        // 2. Verificar estado de Proof Server
+        const res = await service.checkProofServerHealth().catch(() => ({ status: false, message: 'Proof Server Offline' }));
+        setProofServerOnline(res.status);
+        setProofServerMsg(res.message);
 
-      // 3. Cargar estado del ledger
-      const state = await service.getLedgerState();
-      setLedgerState(state);
+        // 3. Cargar estado del ledger
+        const state = await service.getLedgerState().catch(() => ({
+          estado: 'CERRADA' as const,
+          candidatos: [],
+          totalVotos: 0,
+          horaInicio: null,
+          duracionSegundos: 86400,
+          tiempoRestante: -1,
+          cantidadCandidatos: 0,
+        }));
+        setLedgerState(state);
+      } catch (err) {
+        console.error('Error inicializando panel de administración:', err);
+        setLedgerState({
+          estado: 'CERRADA',
+          candidatos: [],
+          totalVotos: 0,
+          horaInicio: null,
+          duracionSegundos: 86400,
+          tiempoRestante: -1,
+          cantidadCandidatos: 0,
+        });
+      }
     };
 
     init();
