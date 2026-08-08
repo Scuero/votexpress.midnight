@@ -71,6 +71,12 @@ export function saveConfigToLocalStorage(config: typeof cachedConfig) {
  * Obtiene la configuración actual de la caché.
  */
 export function getCachedConfig() {
+  if (typeof window === 'undefined') {
+    const globalStore = globalThis as unknown as { __votexpress_config?: typeof cachedConfig };
+    if (globalStore.__votexpress_config) {
+      cachedConfig = { ...cachedConfig, ...globalStore.__votexpress_config };
+    }
+  }
   return { ...cachedConfig };
 }
 
@@ -145,14 +151,15 @@ export async function fetchRuntimeConfig(): Promise<void> {
  * Obtiene la configuración de red según las variables de entorno o caché.
  */
 export function getNetworkConfig(): NetworkConfig {
-  const network = NETWORK_CONFIGS[cachedConfig.network] ? cachedConfig.network : 'preview';
+  const current = getCachedConfig();
+  const network = NETWORK_CONFIGS[current.network] ? current.network : 'preview';
   const config = NETWORK_CONFIGS[network];
 
   return {
     network,
     ...config,
-    proofServerUrl: cachedConfig.proofServerUrl || config.proofServerUrl,
-    blockfrostProjectId: cachedConfig.blockfrostProjectId || undefined,
+    proofServerUrl: current.proofServerUrl || config.proofServerUrl,
+    blockfrostProjectId: current.blockfrostProjectId || undefined,
   };
 }
 
@@ -160,14 +167,14 @@ export function getNetworkConfig(): NetworkConfig {
  * Obtiene la dirección del contrato de votación desplegado.
  */
 export function getVotingContractAddress(): string | null {
-  return cachedConfig.votingContractAddress || null;
+  return getCachedConfig().votingContractAddress || null;
 }
 
 /**
  * Obtiene la dirección del contrato de registro DNI desplegado.
  */
 export function getDniContractAddress(): string | null {
-  return cachedConfig.dniContractAddress || null;
+  return getCachedConfig().dniContractAddress || null;
 }
 
 /**

@@ -221,8 +221,19 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
           }
         }
 
-        balanceTDust = dustBalance.toString();
-        balanceTNight = nightBalance.toString();
+        const formatBalance = (bal: bigint): string => {
+          const integerPart = bal / 1000000n;
+          const fractionalPart = bal % 1000000n;
+          if (fractionalPart === 0n) {
+            return integerPart.toString();
+          }
+          let fracStr = fractionalPart.toString().padStart(6, '0');
+          fracStr = fracStr.replace(/0+$/, '');
+          return `${integerPart}.${fracStr}`;
+        };
+
+        balanceTDust = formatBalance(dustBalance);
+        balanceTNight = formatBalance(nightBalance);
       }
     } catch (e) {
       console.warn('No se pudieron obtener los balances de la wallet:', e);
