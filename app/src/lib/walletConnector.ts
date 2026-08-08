@@ -116,17 +116,14 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
   try {
     let walletApi: any;
 
-    if (typeof provider.connect === 'function') {
-      // Camino oficial: InitialAPI.connect(networkId) → Promise<ConnectedAPI>
-      walletApi = await provider.connect(netId);
-    } else if (typeof (provider as any).enable === 'function') {
-      // Fallback defensivo: algunas builds muy viejas de wallets (previas a
-      // que se estandarizara la spec del DApp Connector) exponían enable()
-      // en lugar de connect(). No forma parte del tipo InitialAPI oficial,
-      // por eso el cast a `any` acá.
+    if (typeof (provider as any).enable === 'function') {
+      // Priorizar enable() porque es el método estándar más compatible
+      // y no restringe la red de manera forzada al conectar, evitando bloqueos del canal RPC.
       walletApi = await (provider as any).enable();
+    } else if (typeof provider.connect === 'function') {
+      walletApi = await provider.connect(netId);
     } else {
-      throw new Error('El proveedor inyectado de Lace no expone el método connect().');
+      throw new Error('El proveedor inyectado de Lace no expone los métodos enable() ni connect().');
     }
 
     return walletApi as WalletAPI;
@@ -195,8 +192,42 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
       balanceTNight = nightBalance.toString();
     }
 
+    // Validar si la red de la billetera coincide con la seleccionada en la DApp
+    let walletNetId = '';
+    try {
+      if (typeof walletApi.getConfiguration === 'function') {
+        const wConfig = await walletApi.getConfiguration();
+        walletNetId = wConfig?.networkId || '';
+      } else if (typeof walletApi.getConnectionStatus === 'function') {
+        const status = await walletApi.getConnectionStatus();
+        walletNetId = status?.networkId || '';
+      }
+    } catch (e) {
+      console.warn('No se pudo verificar la red de la wallet:', e);
+    }
+
     let networkLabel = 'unknown';
     const config = getCachedConfig();
+    
+    if (walletNetId) {
+      const normalizedWalletNet = walletNetId.toLowerCase();
+      const normalizedConfigNet = config.network.toLowerCase();
+      
+      const isMismatch = (normalizedConfigNet === 'testnet' && normalizedWalletNet !== 'testnet' && normalizedWalletNet !== 'preprod') ||
+                         (normalizedConfigNet === 'preview' && normalizedWalletNet !== 'preview') ||
+                         (normalizedConfigNet === 'local' && normalizedWalletNet !== 'local' && normalizedWalletNet !== 'undeployed') ||
+                         (normalizedConfigNet === 'mainnet' && normalizedWalletNet !== 'mainnet');
+
+      if (isMismatch) {
+        const expectedNet = config.network === 'local' 
+          ? 'Local (Docker devnet)' 
+          : (config.network === 'testnet' 
+             ? 'Testnet Preprod' 
+             : (config.network === 'preview' ? 'Testnet Preview' : 'Mainnet'));
+        throw new Error(`Network ID mismatch: Tu billetera está en '${walletNetId}', pero la DApp está configurada para '${expectedNet}'.`);
+      }
+    }
+
     if (config.network === 'testnet') networkLabel = 'Preprod';
     else if (config.network === 'preview') networkLabel = 'Preview';
     else if (config.network === 'mainnet') networkLabel = 'Mainnet';
