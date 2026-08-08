@@ -168,7 +168,11 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
       throw new Error('La API de la billetera no expone getUnshieldedAddress().');
     }
 
-    const address = await walletApi.getUnshieldedAddress();
+    const addressData = await walletApi.getUnshieldedAddress();
+    const address = typeof addressData === 'string' 
+      ? addressData 
+      : (addressData?.unshieldedAddress || '');
+      
     if (!address) {
       throw new Error('La billetera está bloqueada. Por favor, desbloqueá Lace e ingresá tu clave de seguridad.');
     }
@@ -180,15 +184,43 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
         const balances = await walletApi.getUnshieldedBalances();
         let dustBalance = BigInt(0);
         let nightBalance = BigInt(0);
+
+        const toBigInt = (val: any): bigint => {
+          if (typeof val === 'bigint') return val;
+          if (typeof val === 'number') return BigInt(val);
+          if (typeof val === 'string') {
+            try { return BigInt(val); } catch { return BigInt(0); }
+          }
+          return BigInt(0);
+        };
+
+        const entries: [any, any][] = [];
         if (balances) {
-          if (typeof (balances as any).get === 'function') {
-            dustBalance = (balances as any).get('') || (balances as any).get('tDUST') || (balances as any).get('dust') || BigInt(0);
-            nightBalance = (balances as any).get('tNIGHT') || (balances as any).get('NIGHT') || (balances as any).get('night') || BigInt(0);
+          if (typeof (balances as any).entries === 'function') {
+            entries.push(...Array.from((balances as any).entries()));
           } else {
-            dustBalance = (balances as any)[''] || (balances as any)['tDUST'] || (balances as any)['dust'] || BigInt(0);
-            nightBalance = (balances as any)['tNIGHT'] || (balances as any)['NIGHT'] || (balances as any)['night'] || BigInt(0);
+            entries.push(...Object.entries(balances));
           }
         }
+
+        const debugStr = entries.map(([k, v]) => `${typeof k === 'object' ? JSON.stringify(k) : String(k)}: ${String(v)}`).join(', ');
+        console.log('📊 Balances devueltos por Lace:', debugStr);
+
+        for (const [key, value] of entries) {
+          const keyStr = typeof key === 'object' ? JSON.stringify(key) : String(key).toLowerCase();
+          const valBig = toBigInt(value);
+
+          if (keyStr === '' || keyStr.includes('night') || keyStr.includes('native') || keyStr.includes('0000000000000000000000000000000000000000000000000000000000000000')) {
+            nightBalance = valBig;
+          } else if (keyStr.includes('dust')) {
+            dustBalance = valBig;
+          } else {
+            if (entries.length === 1) {
+              nightBalance = valBig;
+            }
+          }
+        }
+
         balanceTDust = dustBalance.toString();
         balanceTNight = nightBalance.toString();
       }
