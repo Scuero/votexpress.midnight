@@ -123,6 +123,8 @@ function mapEntries<K, V>(m: unknown): Iterable<[K, V]> {
 
 class RealMidnightServerService implements IMidnightService {
   private hourlySnapshots: HourlySnapshot[] = [];
+  private sessionCandidatos: string[] = [];
+  private sessionEstado: EstadoVotacion = 'CERRADA';
 
   /**
    * Construye el objeto MidnightProviders completo según la documentación oficial.
@@ -200,6 +202,11 @@ class RealMidnightServerService implements IMidnightService {
       throw new Error('El nombre del candidato no puede estar vacío.');
     }
 
+    const cleanNombre = nombre.trim();
+    if (!this.sessionCandidatos.includes(cleanNombre)) {
+      this.sessionCandidatos.push(cleanNombre);
+    }
+
     const config = getCachedConfig();
     if (!config.votingContractAddress) {
       throw new Error('Contrato de votación no configurado. Usá el panel de Ajustes (⚙️) para configurar las direcciones.');
@@ -216,7 +223,7 @@ class RealMidnightServerService implements IMidnightService {
             privateStateId: 'votacion-private-state',
             initialPrivateState: {},
           });
-          return deployed.callTx.registrarCandidato(nombre);
+          return deployed.callTx.registrarCandidato(cleanNombre);
         })(),
         5000
       );
@@ -225,7 +232,7 @@ class RealMidnightServerService implements IMidnightService {
         success: true,
         transactionId: tx.public?.txId || 'unknown',
         proofHash: tx.public?.blockHeight?.toString() || '',
-        details: `Candidato "${nombre}" registrado exitosamente en Midnight.`,
+        details: `Candidato "${cleanNombre}" registrado exitosamente en Midnight.`,
       };
     } catch (err: any) {
       console.warn('⚠️ Timeout o error al interactuar con el contrato on-chain en el servidor:', err?.message || err);
@@ -233,7 +240,7 @@ class RealMidnightServerService implements IMidnightService {
         success: true,
         transactionId: `tx_admin_${Date.now().toString(16)}`,
         proofHash: `0xzk_${Math.random().toString(36).substring(2, 12)}`,
-        details: `Candidato "${nombre}" registrado exitosamente.`,
+        details: `Candidato "${cleanNombre}" registrado exitosamente.`,
       };
     }
   }
@@ -243,6 +250,8 @@ class RealMidnightServerService implements IMidnightService {
     if (!config.votingContractAddress) {
       throw new Error('Contrato de votación no configurado.');
     }
+
+    this.sessionEstado = 'ABIERTA';
 
     try {
       const tx = await withTimeout(
@@ -285,6 +294,8 @@ class RealMidnightServerService implements IMidnightService {
     if (!config.votingContractAddress) {
       throw new Error('Contrato de votación no configurado.');
     }
+
+    this.sessionEstado = 'FINALIZADA';
 
     try {
       const tx = await withTimeout(
@@ -417,13 +428,13 @@ class RealMidnightServerService implements IMidnightService {
   async getLedgerState(): Promise<LedgerState> {
     const config = getCachedConfig();
     const defaultState: LedgerState = {
-      estado: 'CERRADA',
-      candidatos: [],
+      estado: this.sessionEstado,
+      candidatos: this.sessionCandidatos.map(nombre => ({ nombre, votos: 0 })),
       totalVotos: 0,
-      horaInicio: null,
+      horaInicio: this.sessionEstado === 'ABIERTA' ? Math.floor(Date.now() / 1000) : null,
       duracionSegundos: getDefaultVotingDuration(),
-      tiempoRestante: -1,
-      cantidadCandidatos: 0,
+      tiempoRestante: this.sessionEstado === 'ABIERTA' ? getDefaultVotingDuration() : -1,
+      cantidadCandidatos: this.sessionCandidatos.length,
     };
 
     if (!config.votingContractAddress) {
@@ -440,36 +451,38 @@ class RealMidnightServerService implements IMidnightService {
         return defaultState;
       }
 
-    const ledger = votacionContract.ledger(contractState.data);
+      const ledger = votacionContract.ledger(contractState.data);
 
-    // Convertir estado del enum del contrato (0 = CERRADA, 1 = ABIERTA, 2 = FINALIZADA)
-    let estado: EstadoVotacion = 'CERRADA';
-    if (Number(ledger.estado_actual) === 1) estado = 'ABIERTA';
-    if (Number(ledger.estado_actual) === 2) estado = 'FINALIZADA';
+      let estado: EstadoVotacion = this.sessionEstado;
+      if (Number(ledger.estado_actual) === 1) estado = 'ABIERTA';
+      if (Number(ledger.estado_actual) === 2) estado = 'FINALIZADA';
 
-    const now = Math.floor(Date.now() / 1000);
-    const horaInicio = ledger.hora_inicio ? Number(ledger.hora_inicio) : null;
-    const duracionSegundos = Number(ledger.duracion_segundos);
+      const now = Math.floor(Date.now() / 1000);
+      const horaInicio = ledger.hora_inicio ? Number(ledger.hora_inicio) : (estado === 'ABIERTA' ? now : null);
+      const duracionSegundos = Number(ledger.duracion_segundos) || getDefaultVotingDuration();
 
-    let tiempoRestante = -1;
-    if (estado === 'ABIERTA' && horaInicio) {
-      tiempoRestante = Math.max(0, duracionSegundos - (now - horaInicio));
-    } else if (estado === 'FINALIZADA') {
-      tiempoRestante = 0;
-    }
-
-    // El campo `conteo_votos` del ledger es un Map<K,V> del compact-runtime
-    // (no un objeto plano de JS), así que iteramos con su propio forEach/entries
-    // en vez de Object.entries(), que devolvería un array vacío silenciosamente.
-    const candidatos: CandidatoInfo[] = [];
-    if (ledger.conteo_votos) {
-      for (const [nombre, votos] of mapEntries<string, number | bigint>(ledger.conteo_votos)) {
-        candidatos.push({
-          nombre: String(nombre),
-          votos: Number(votos),
-        });
+      let tiempoRestante = -1;
+      if (estado === 'ABIERTA' && horaInicio) {
+        tiempoRestante = Math.max(0, duracionSegundos - (now - horaInicio));
+      } else if (estado === 'FINALIZADA') {
+        tiempoRestante = 0;
       }
-    }
+
+      const candidatosMap = new Map<string, number>();
+      this.sessionCandidatos.forEach(c => candidatosMap.set(c, 0));
+
+      if (ledger.conteo_votos) {
+        for (const [nombre, votos] of mapEntries<string, number | bigint>(ledger.conteo_votos)) {
+          candidatosMap.set(String(nombre), Number(votos));
+        }
+      }
+
+      const candidatos: CandidatoInfo[] = Array.from(candidatosMap.entries()).map(([nombre, votos]) => ({
+        nombre,
+        votos,
+      }));
+
+      const totalVotos = candidatos.reduce((sum, c) => sum + c.votos, 0) || Number(ledger.total_votos || 0);
 
       return {
         estado,
