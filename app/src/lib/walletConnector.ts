@@ -106,7 +106,7 @@ export async function connectLaceWallet(): Promise<WalletAPI> {
   }
 
   const config = getCachedConfig();
-  const netId = config.network === 'local' ? 'undeployed' : (config.network === 'testnet' ? 'preprod' : 'mainnet');
+  const netId = config.network === 'local' ? 'undeployed' : (config.network === 'testnet' ? 'testnet' : 'mainnet');
 
   try {
     let walletApi: any;
