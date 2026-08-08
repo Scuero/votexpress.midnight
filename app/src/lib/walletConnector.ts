@@ -38,7 +38,7 @@ export interface WalletAPI {
   getUnshieldedBalances: () => Promise<Record<string, bigint>>;
   getDustBalance: () => Promise<bigint>;
   getShieldedAddresses: () => Promise<string[]>;
-  getUnshieldedAddress: () => Promise<string>;
+  getUnshieldedAddress: () => Promise<string | { unshieldedAddress: string } | null | undefined>;
   getDustAddress: () => Promise<string>;
   makeTransfer: (outputs: unknown[]) => Promise<unknown>;
   balanceTransaction: (tx: unknown) => Promise<unknown>;
@@ -197,7 +197,7 @@ export async function getWalletState(walletApi: WalletAPI): Promise<WalletState>
         const entries: [any, any][] = [];
         if (balances) {
           if (typeof (balances as any).entries === 'function') {
-            entries.push(...Array.from((balances as any).entries()));
+            entries.push(...(Array.from((balances as any).entries()) as [any, any][] || []));
           } else {
             entries.push(...Object.entries(balances));
           }
